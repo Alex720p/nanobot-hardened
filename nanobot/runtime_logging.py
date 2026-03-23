@@ -28,9 +28,9 @@ def _serialize(value: Any) -> Any:
 
 def _log_path(now: datetime) -> Path:
     """Resolve the daily log file path."""
-    day_dir = get_logs_dir() / now.strftime("%d-%m-%Y")
-    day_dir.mkdir(parents=True, exist_ok=True)
-    return day_dir / "nanobot.log"
+    logs_dir = get_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return logs_dir / f"{now.strftime('%d-%m-%Y')}.log"
 
 
 def write_runtime_log(event: str, **payload: Any) -> None:
