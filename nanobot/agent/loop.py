@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import json
 import os
 import re
@@ -30,6 +31,7 @@ from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.utils.helpers import build_status_content
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
+from nanobot.runtime_logging import write_runtime_log
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
@@ -258,6 +260,12 @@ class AgentLoop:
                     tools_used.append(tool_call.name)
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
+                    write_runtime_log(
+                        "tool_call_requested",
+                        tool_call=asdict(tool_call),
+                        model=self.model,
+                        iteration=iteration,
+                    )
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
@@ -596,4 +604,7 @@ class AgentLoop:
         """Process a message directly and return the outbound payload."""
         await self._connect_mcp()
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
-        return await self._process_message(msg, session_key=session_key, on_progress=on_progress)
+        write_runtime_log("direct_inbound", message=msg, session_key=session_key)
+        response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)
+        write_runtime_log("direct_outbound", message=response, session_key=session_key)
+        return response

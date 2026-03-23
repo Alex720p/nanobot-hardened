@@ -1,6 +1,7 @@
 """Subagent manager for background task execution."""
 
 import asyncio
+from dataclasses import asdict
 import json
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import ExecToolConfig
 from nanobot.providers.base import LLMProvider
+from nanobot.runtime_logging import write_runtime_log
 from nanobot.utils.helpers import build_assistant_message
 
 
@@ -143,6 +145,13 @@ class SubagentManager:
                     for tool_call in response.tool_calls:
                         args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                         logger.debug("Subagent [{}] executing: {} with arguments: {}", task_id, tool_call.name, args_str)
+                        write_runtime_log(
+                            "tool_call_requested",
+                            tool_call=asdict(tool_call),
+                            model=self.model,
+                            subagent_task_id=task_id,
+                            subagent_label=label,
+                        )
                         result = await tools.execute(tool_call.name, tool_call.arguments)
                         messages.append({
                             "role": "tool",

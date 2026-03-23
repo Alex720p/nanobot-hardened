@@ -3,6 +3,7 @@
 import asyncio
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
+from nanobot.runtime_logging import write_runtime_log
 
 
 class MessageBus:
@@ -19,6 +20,7 @@ class MessageBus:
 
     async def publish_inbound(self, msg: InboundMessage) -> None:
         """Publish a message from a channel to the agent."""
+        write_runtime_log("bus_inbound", message=msg)
         await self.inbound.put(msg)
 
     async def consume_inbound(self) -> InboundMessage:
@@ -27,6 +29,7 @@ class MessageBus:
 
     async def publish_outbound(self, msg: OutboundMessage) -> None:
         """Publish a response from the agent to channels."""
+        write_runtime_log("bus_outbound", message=msg)
         await self.outbound.put(msg)
 
     async def consume_outbound(self) -> OutboundMessage:

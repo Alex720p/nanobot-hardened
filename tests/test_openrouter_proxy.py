@@ -1,10 +1,15 @@
-import asyncio
 import json
+import asyncio
 
 import httpx
 from fastapi.testclient import TestClient
 
-from nanobot.proxy.openrouter import OpenRouterProxy, create_openrouter_proxy_app, run_openrouter_proxy
+from nanobot.proxy.openrouter import (
+    OpenRouterProxy,
+    create_openrouter_proxy_app,
+    load_openrouter_key,
+    run_openrouter_proxy,
+)
 
 
 def _response(
@@ -105,12 +110,31 @@ def test_handle_rejects_oversized_body() -> None:
 
 
 def test_fastapi_healthz() -> None:
-    client = TestClient(create_openrouter_proxy_app(api_key="real-key"))
-
-    response = client.get("/healthz")
+    with TestClient(create_openrouter_proxy_app(api_key="real-key")) as client:
+        response = client.get("/healthz")
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "service": "openrouter-proxy"}
+
+
+def test_handle_allows_known_route_with_query(monkeypatch) -> None:
+    proxy = OpenRouterProxy(api_key="real-key")
+
+    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes) -> httpx.Response:
+        return _response(json_body={"data": []}, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(proxy, "_send_upstream", fake_send)
+
+    result = asyncio.run(proxy.handle("GET", "/v1/models?page=1", {"Accept": "application/json"}))
+
+    assert result.status_code == 200
+    assert json.loads(result.body) == {"data": []}
+
+
+def test_load_openrouter_key_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "real-key")
+
+    assert load_openrouter_key() == "real-key"
 
 
 def test_run_openrouter_proxy_requires_env(monkeypatch) -> None:

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from nanobot.runtime_logging import write_runtime_log
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
 
 if TYPE_CHECKING:
@@ -84,9 +85,17 @@ class MemoryStore:
         self._consecutive_failures = 0
 
     def read_long_term(self) -> str:
+        content = ""
         if self.memory_file.exists():
-            return self.memory_file.read_text(encoding="utf-8")
-        return ""
+            content = self.memory_file.read_text(encoding="utf-8")
+            
+        write_runtime_log(
+            "memory_read",
+            path=self.memory_file,
+            exists=self.memory_file.exists(),
+            content=content,
+        )
+        return content
 
     def write_long_term(self, content: str) -> None:
         self.memory_file.write_text(content, encoding="utf-8")

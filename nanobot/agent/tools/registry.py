@@ -3,6 +3,7 @@
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
+from nanobot.runtime_logging import write_runtime_log
 
 
 class ToolRegistry:
@@ -41,21 +42,41 @@ class ToolRegistry:
 
         tool = self._tools.get(name)
         if not tool:
+            write_runtime_log("tool_execution_missing", tool=name, params=params)
             return f"Error: Tool '{name}' not found. Available: {', '.join(self.tool_names)}"
 
         try:
             # Attempt to cast parameters to match schema types
             params = tool.cast_params(params)
+            write_runtime_log("tool_execution_start", tool=name, params=params)
             
             # Validate parameters
             errors = tool.validate_params(params)
             if errors:
+                write_runtime_log(
+                    "tool_execution_invalid",
+                    tool=name,
+                    params=params,
+                    errors=errors,
+                )
                 return f"Error: Invalid parameters for tool '{name}': " + "; ".join(errors) + _HINT
             result = await tool.execute(**params)
+            write_runtime_log(
+                "tool_execution_result",
+                tool=name,
+                params=params,
+                result=result,
+            )
             if isinstance(result, str) and result.startswith("Error"):
                 return result + _HINT
             return result
         except Exception as e:
+            write_runtime_log(
+                "tool_execution_exception",
+                tool=name,
+                params=params,
+                error=str(e),
+            )
             return f"Error executing {name}: {str(e)}" + _HINT
 
     @property
