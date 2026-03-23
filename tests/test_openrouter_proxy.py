@@ -51,7 +51,11 @@ def test_handle_forwards_chat_completions_with_injected_key(monkeypatch) -> None
         captured["body"] = body
         return _response(
             json_body={"id": "chatcmpl_demo"},
-            headers={"content-type": "application/json", "transfer-encoding": "chunked"},
+            headers={
+                "content-type": "application/json",
+                "content-encoding": "gzip",
+                "transfer-encoding": "chunked",
+            },
         )
 
     monkeypatch.setattr(proxy, "_send_upstream", fake_send)
@@ -75,6 +79,7 @@ def test_handle_forwards_chat_completions_with_injected_key(monkeypatch) -> None
     assert captured["headers"]["X-Trace-Id"] == "abc123"
     assert result.status_code == 200
     assert result.headers["content-type"] == "application/json"
+    assert "content-encoding" not in result.headers
     assert "transfer-encoding" not in result.headers
     assert json.loads(result.body) == {"id": "chatcmpl_demo"}
 

@@ -41,6 +41,7 @@ _REQUEST_HEADER_SKIP = frozenset(
 _RESPONSE_HEADER_SKIP = frozenset(
     {
         "connection",
+        "content-encoding",
         "content-length",
         "keep-alive",
         "proxy-authenticate",
