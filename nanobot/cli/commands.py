@@ -1121,6 +1121,56 @@ provider_app = typer.Typer(help="Manage providers")
 app.add_typer(provider_app, name="provider")
 
 
+# ============================================================================
+# Proxy Commands
+# ============================================================================
+
+proxy_app = typer.Typer(help="Run local credential proxies")
+app.add_typer(proxy_app, name="proxy")
+
+
+@proxy_app.command("openrouter")
+def proxy_openrouter(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(8088, "--port", help="Bind port"),
+    api_key_env: str = typer.Option(
+        "OPENROUTER_API_KEY",
+        "--api-key-env",
+        help="Environment variable containing the real OpenRouter key",
+    ),
+    upstream_base: str = typer.Option(
+        "https://openrouter.ai/api",
+        "--upstream-base",
+        help="Upstream OpenRouter API base URL",
+    ),
+    timeout_s: float = typer.Option(120.0, "--timeout", help="Upstream request timeout in seconds"),
+    max_body_mb: int = typer.Option(10, "--max-body-mb", help="Maximum accepted request body size in MB"),
+):
+    """Run a local OpenRouter proxy that injects the real API key."""
+    from nanobot.proxy.openrouter import run_openrouter_proxy
+
+    console.print(f"{__logo__} OpenRouter proxy")
+    console.print(f"[dim]Listening on http://{host}:{port}[/dim]")
+    console.print(f"[dim]Reading real key from ${api_key_env}[/dim]")
+    console.print("[dim]Point nanobot providers.openrouter.apiBase to this proxy and keep a dummy apiKey[/dim]\n")
+
+    try:
+        run_openrouter_proxy(
+            host=host,
+            port=port,
+            api_key_env=api_key_env,
+            upstream_base=upstream_base,
+            timeout_s=timeout_s,
+            max_body_bytes=max_body_mb * 1024 * 1024,
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Proxy stopped[/dim]")
+        raise typer.Exit(0)
+
+
 _LOGIN_HANDLERS: dict[str, callable] = {}
 
 
