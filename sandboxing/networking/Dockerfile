@@ -7,6 +7,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir requests
 
 COPY main.py .
 COPY network_call.py .
