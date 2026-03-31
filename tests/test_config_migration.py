@@ -52,6 +52,23 @@ def test_save_config_writes_context_window_tokens_but_not_memory_window(tmp_path
     assert "memoryWindow" not in defaults
 
 
+def test_save_config_writes_web_sandbox_settings(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    config = load_config(config_path)
+    config.tools.web.sandbox.template_name = "network-sandbox-template"
+    config.tools.web.sandbox.namespace = "default"
+    config.tools.web.sandbox.run_timeout = 75
+
+    save_config(config, config_path)
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert saved["tools"]["web"]["sandbox"]["templateName"] == "network-sandbox-template"
+    assert saved["tools"]["web"]["sandbox"]["namespace"] == "default"
+    assert saved["tools"]["web"]["sandbox"]["runTimeout"] == 75
+
+
 def test_onboard_does_not_crash_with_legacy_memory_window(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "config.json"
     workspace = tmp_path / "workspace"

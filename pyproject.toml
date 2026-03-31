@@ -50,6 +50,7 @@ dependencies = [
     "chardet>=3.0.2,<6.0.0",
     "openai>=2.8.0",
     "tiktoken>=0.12.0,<1.0.0",
+    "k8s-agent-sandbox>=0.1.1.post3,<1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -89,6 +90,7 @@ include = [
     "nanobot/templates/**/*.md",
     "nanobot/skills/**/*.md",
     "nanobot/skills/**/*.sh",
+    "sandboxing/networking/web_fetch.py",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -99,10 +101,12 @@ packages = ["nanobot"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "bridge" = "nanobot/bridge"
+"sandboxing/networking/web_fetch.py" = "nanobot/sandboxing/networking/web_fetch.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "nanobot/",
+    "sandboxing/networking/web_fetch.py",
     "bridge/",
     "README.md",
     "LICENSE",

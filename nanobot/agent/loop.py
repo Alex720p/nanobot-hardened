@@ -35,7 +35,7 @@ from nanobot.runtime_logging import write_runtime_log
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebSearchConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebSandboxConfig, WebSearchConfig
     from nanobot.cron.service import CronService
 
 
@@ -62,6 +62,7 @@ class AgentLoop:
         max_iterations: int = 40,
         context_window_tokens: int = 65_536,
         web_search_config: WebSearchConfig | None = None,
+        web_sandbox_config: WebSandboxConfig | None = None,
         web_proxy: str | None = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
@@ -70,7 +71,7 @@ class AgentLoop:
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebSearchConfig
+        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig
 
         self.bus = bus
         self.channels_config = channels_config
@@ -80,6 +81,7 @@ class AgentLoop:
         self.max_iterations = max_iterations
         self.context_window_tokens = context_window_tokens
         self.web_search_config = web_search_config or WebSearchConfig()
+        self.web_sandbox_config = web_sandbox_config or WebSandboxConfig()
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
@@ -96,6 +98,7 @@ class AgentLoop:
             bus=bus,
             model=self.model,
             web_search_config=self.web_search_config,
+            web_sandbox_config=self.web_sandbox_config,
             web_proxy=web_proxy,
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
@@ -135,7 +138,7 @@ class AgentLoop:
                 path_append=self.exec_config.path_append,
             ))
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
-        self.tools.register(WebFetchTool(proxy=self.web_proxy))
+        self.tools.register(WebFetchTool(proxy=self.web_proxy, sandbox_config=self.web_sandbox_config))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:

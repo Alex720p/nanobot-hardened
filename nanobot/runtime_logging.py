@@ -1,7 +1,5 @@
 """Daily runtime log helpers."""
 
-from __future__ import annotations
-
 import json
 import threading
 from dataclasses import asdict, is_dataclass

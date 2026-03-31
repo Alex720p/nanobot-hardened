@@ -32,17 +32,19 @@ class SubagentManager:
         bus: MessageBus,
         model: str | None = None,
         web_search_config: "WebSearchConfig | None" = None,
+        web_sandbox_config: "WebSandboxConfig | None" = None,
         web_proxy: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebSearchConfig
+        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig
 
         self.provider = provider
         self.workspace = workspace
         self.bus = bus
         self.model = model or provider.get_default_model()
         self.web_search_config = web_search_config or WebSearchConfig()
+        self.web_sandbox_config = web_sandbox_config or WebSandboxConfig()
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
@@ -107,7 +109,7 @@ class SubagentManager:
                 path_append=self.exec_config.path_append,
             ))
             tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
-            tools.register(WebFetchTool(proxy=self.web_proxy))
+            tools.register(WebFetchTool(proxy=self.web_proxy, sandbox_config=self.web_sandbox_config))
             
             system_prompt = self._build_subagent_prompt()
             messages: list[dict[str, Any]] = [

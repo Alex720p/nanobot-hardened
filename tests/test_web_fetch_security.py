@@ -1,4 +1,4 @@
-"""Tests for web_fetch SSRF protection and untrusted content marking."""
+"""Tests for sandbox-only web_fetch guards and configuration errors."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nanobot.config.schema import WebSandboxConfig
 from nanobot.agent.tools.web import WebFetchTool
 
 
@@ -41,73 +42,27 @@ async def test_web_fetch_blocks_localhost():
 
 
 @pytest.mark.asyncio
-async def test_web_fetch_result_contains_untrusted_flag():
-    """When fetch succeeds, result JSON must include untrusted=True and the banner."""
+async def test_web_fetch_requires_sandbox_configuration(monkeypatch):
     tool = WebFetchTool()
 
-    fake_html = "<html><head><title>Test</title></head><body><p>Hello world</p></body></html>"
-
-    import httpx
-
-    class FakeResponse:
-        status_code = 200
-        url = "https://example.com/page"
-        text = fake_html
-        headers = {"content-type": "text/html"}
-        def raise_for_status(self): pass
-        def json(self): return {}
-
-    async def _fake_get(self, url, **kwargs):
-        return FakeResponse()
-
-    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public), \
-         patch("httpx.AsyncClient.get", _fake_get):
+    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public):
         result = await tool.execute(url="https://example.com/page")
-
     data = json.loads(result)
-    assert data.get("untrusted") is True
-    assert "[External content" in data.get("text", "")
+    assert "error" in data
+    assert "sandbox web_fetch is required" in data["error"].lower()
 
 
 @pytest.mark.asyncio
-async def test_web_fetch_blocks_private_redirect_before_returning_image(monkeypatch):
-    tool = WebFetchTool()
-
-    class FakeStreamResponse:
-        headers = {"content-type": "image/png"}
-        url = "http://127.0.0.1/secret.png"
-        content = b"\x89PNG\r\n\x1a\n"
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def aread(self):
-            return self.content
-
-        def raise_for_status(self):
-            return None
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        def stream(self, method, url, headers=None):
-            return FakeStreamResponse()
-
-    monkeypatch.setattr("nanobot.agent.tools.web.httpx.AsyncClient", FakeClient)
+async def test_web_fetch_surfaces_sandbox_unavailable_error(monkeypatch):
+    monkeypatch.setattr(
+        "nanobot.agent.tools.web_sandbox._get_sandbox_client_class",
+        lambda: (_ for _ in ()).throw(ModuleNotFoundError("k8s_agent_sandbox")),
+    )
+    tool = WebFetchTool(sandbox_config=WebSandboxConfig(template_name="python-sandbox-template"))
 
     with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public):
-        result = await tool.execute(url="https://example.com/image.png")
+        result = await tool.execute(url="https://example.com/page")
 
     data = json.loads(result)
     assert "error" in data
-    assert "redirect blocked" in data["error"].lower()
+    assert "sandbox web_fetch unavailable" in data["error"].lower()

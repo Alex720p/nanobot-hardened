@@ -106,6 +106,14 @@ class WebSearchConfig(Base):
     max_results: int = 5
 
 
+class WebSandboxConfig(Base):
+    """Agent Sandbox configuration for sandboxed web tools."""
+
+    template_name: str = ""
+    namespace: str = "default"
+    run_timeout: int = 60
+
+
 class WebToolsConfig(Base):
     """Web tools configuration."""
 
@@ -113,6 +121,7 @@ class WebToolsConfig(Base):
         None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
     )
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
+    sandbox: WebSandboxConfig = Field(default_factory=WebSandboxConfig)
 
 
 class ExecToolConfig(Base):
