@@ -89,6 +89,33 @@ def test_handle_forwards_chat_completions_with_injected_key(monkeypatch) -> None
     assert json.loads(result.body) == {"id": "chatcmpl_demo"}
 
 
+def test_handle_filters_server_header_from_upstream(monkeypatch) -> None:
+    proxy = OpenRouterProxy(api_key="real-key")
+
+    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes) -> httpx.Response:
+        return _response(
+            json_body={"id": "chatcmpl_demo"},
+            headers={
+                "content-type": "application/json",
+                "server": "openrouter-edge",
+            },
+        )
+
+    monkeypatch.setattr(proxy, "_send_upstream", fake_send)
+
+    result = asyncio.run(
+        proxy.handle(
+            method="POST",
+            raw_path="/v1/chat/completions",
+            headers={"Content-Type": "application/json"},
+            body=b'{"model":"anthropic/claude-sonnet-4-5","messages":[]}',
+        )
+    )
+
+    assert result.status_code == 200
+    assert "server" not in {k.lower(): v for k, v in result.headers.items()}
+
+
 def test_handle_rejects_unknown_route() -> None:
     proxy = OpenRouterProxy(api_key="real-key")
 

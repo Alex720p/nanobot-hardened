@@ -48,6 +48,7 @@ _RESPONSE_HEADER_SKIP = frozenset(
         "keep-alive",
         "proxy-authenticate",
         "proxy-authorization",
+        "server",
         "te",
         "trailer",
         "transfer-encoding",
