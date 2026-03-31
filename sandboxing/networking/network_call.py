@@ -1,4 +1,4 @@
 import requests
 
-x = requests.get('https://w3schools.com')
-print(x.status_code)
+x = requests.get('https://wttr.in/geneva?format=j1')
+print(x.content)
