@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 RUN pip install --no-cache-dir requests
 
 COPY main.py .
-COPY network_call.py .
+COPY web_fetch.py .
 
 # Change ownership of the /app directory to the non-root user 1000.
 RUN chown -R 1000:1000 /app
