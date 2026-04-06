@@ -251,3 +251,27 @@ async def test_agent_loop_close_mcp_closes_workspace_sandbox(monkeypatch, tmp_pa
     await loop.close_mcp()
 
     assert closed == ["closed"]
+
+
+def test_agent_loop_registers_exec_with_shared_workspace_sandbox(monkeypatch, tmp_path):
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.bus.queue import MessageBus
+
+    monkeypatch.setattr(
+        "nanobot.agent.tools.workspace_sandbox._get_sandbox_client_class",
+        lambda: _FakeSandboxClient,
+    )
+
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=_DummyProvider(),
+        workspace=tmp_path,
+    )
+
+    exec_tool = loop.tools.get("exec")
+    read_tool = loop.tools.get("read_file")
+
+    assert exec_tool is not None
+    assert read_tool is not None
+    assert exec_tool._workspace_sandbox is loop.workspace_sandbox
+    assert read_tool._workspace_sandbox is loop.workspace_sandbox

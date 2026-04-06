@@ -88,6 +88,32 @@ class WorkspaceSandboxManager:
                 for entry in entries
             ]
 
+    def run_command(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        working_dir: Path | None = None,
+        path_append: str = "",
+    ) -> Any:
+        """Run a shell command inside the long-lived sandbox workspace."""
+        sandbox = self._get_sandbox()
+        script_parts: list[str] = []
+
+        with self._lock:
+            if path_append:
+                script_parts.append(f'export PATH="$PATH":{shlex.quote(path_append)}')
+
+            if working_dir is not None:
+                entry_type = self._entry_type_locked(working_dir, sandbox)
+                if entry_type != "directory":
+                    raise NotADirectoryError(str(working_dir))
+                script_parts.append(f"cd -- {shlex.quote(self._remote_dir_path(working_dir))}")
+
+            script_parts.append(command)
+            script = " && ".join(script_parts)
+            return sandbox.run(f"sh -lc {shlex.quote(script)}", timeout=timeout)
+
     def _get_sandbox(self):
         with self._lock:
             if self._closed:

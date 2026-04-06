@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import socket
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from nanobot.agent.tools.shell import ExecTool
+
+
+class _FakeWorkspaceSandbox:
+    def __init__(self, workspace: Path | None = None):
+        self.workspace = workspace or Path("/workspace")
+
+    def run_command(self, command: str, *, timeout: int, working_dir: Path | None = None, path_append: str = ""):
+        if command == "echo hello":
+            return SimpleNamespace(stdout="hello\n", stderr="", exit_code=0)
+        return SimpleNamespace(stdout="", stderr="", exit_code=0)
 
 
 def _fake_resolve_private(hostname, port, family=0, type_=0):
@@ -43,7 +55,7 @@ async def test_exec_blocks_wget_localhost():
 
 @pytest.mark.asyncio
 async def test_exec_allows_normal_commands():
-    tool = ExecTool(timeout=5)
+    tool = ExecTool(timeout=5, workspace_sandbox=_FakeWorkspaceSandbox())
     result = await tool.execute(command="echo hello")
     assert "hello" in result
     assert "Error" not in result.split("\n")[0]

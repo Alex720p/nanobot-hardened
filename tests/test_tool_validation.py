@@ -1,8 +1,26 @@
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
+
+
+class _FakeWorkspaceSandbox:
+    def __init__(self, workspace: Path | None = None):
+        self.workspace = workspace or Path("/workspace")
+
+    def run_command(self, command: str, *, timeout: int, working_dir: Path | None = None, path_append: str = ""):
+        if command == "echo hello":
+            return SimpleNamespace(stdout="hello\n", stderr="", exit_code=0)
+        if command == "echo ok":
+            return SimpleNamespace(stdout="ok\n", stderr="", exit_code=0)
+        if command == "sleep 10":
+            raise TimeoutError(f"timed out after {timeout} seconds")
+        if command == "python -c \"print('A' * 6000 + '\\n' + 'B' * 6000)\"":
+            return SimpleNamespace(stdout=("A" * 6000 + "\n" + "B" * 6000 + "\n"), stderr="", exit_code=0)
+        return SimpleNamespace(stdout="", stderr="", exit_code=0)
 
 
 class SampleTool(Tool):
@@ -370,7 +388,7 @@ def test_cast_params_single_value_not_auto_wrapped_to_array() -> None:
 
 async def test_exec_always_returns_exit_code() -> None:
     """Exit code should appear in output even on success (exit 0)."""
-    tool = ExecTool()
+    tool = ExecTool(workspace_sandbox=_FakeWorkspaceSandbox())
     result = await tool.execute(command="echo hello")
     assert "Exit code: 0" in result
     assert "hello" in result
@@ -378,7 +396,7 @@ async def test_exec_always_returns_exit_code() -> None:
 
 async def test_exec_head_tail_truncation() -> None:
     """Long output should preserve both head and tail."""
-    tool = ExecTool()
+    tool = ExecTool(workspace_sandbox=_FakeWorkspaceSandbox())
     # Generate output that exceeds _MAX_OUTPUT (10_000 chars)
     # Use python to generate output to avoid command line length limits
     result = await tool.execute(
@@ -393,7 +411,7 @@ async def test_exec_head_tail_truncation() -> None:
 
 async def test_exec_timeout_parameter() -> None:
     """LLM-supplied timeout should override the constructor default."""
-    tool = ExecTool(timeout=60)
+    tool = ExecTool(timeout=60, workspace_sandbox=_FakeWorkspaceSandbox())
     # A very short timeout should cause the command to be killed
     result = await tool.execute(command="sleep 10", timeout=1)
     assert "timed out" in result
@@ -402,7 +420,7 @@ async def test_exec_timeout_parameter() -> None:
 
 async def test_exec_timeout_capped_at_max() -> None:
     """Timeout values above _MAX_TIMEOUT should be clamped."""
-    tool = ExecTool()
+    tool = ExecTool(workspace_sandbox=_FakeWorkspaceSandbox())
     # Should not raise — just clamp to 600
     result = await tool.execute(command="echo ok", timeout=9999)
     assert "Exit code: 0" in result

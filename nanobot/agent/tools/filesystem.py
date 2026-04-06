@@ -67,6 +67,8 @@ class _FsTool(Tool):
     def _require_workspace_sandbox(self, path: Path) -> WorkspaceSandboxManager:
         if not self._workspace_sandbox:
             raise RuntimeError(f"Workspace sandbox manager is required for workspace path: {path}")
+        if not self._workspace_sandbox.manages(path):
+            raise RuntimeError(f"Workspace sandbox manager does not own path: {path}")
         return self._workspace_sandbox
 
     def _exists_sync(self, path: Path) -> bool:
