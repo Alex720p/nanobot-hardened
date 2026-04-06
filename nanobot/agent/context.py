@@ -83,7 +83,7 @@ Treat the workspace root as the current project root (`.`).
 Use relative paths by default unless the user explicitly asks for an absolute path.
 - Long-term memory: `memory/MEMORY.md` (write important facts here)
 - History log: `memory/HISTORY.md` (grep-searchable). Each entry starts with [YYYY-MM-DD HH:MM].
-- Custom skills: `skills/{skill-name}/SKILL.md`
+- Custom skills: `skills/{{skill-name}}/SKILL.md`
 
 {platform_policy}
 
