@@ -14,8 +14,10 @@ WORKDIR /app
 # Installation of dependencies for python runtime sandbox.
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
-RUN pip install --no-cache-dir requests
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY main.py .
 
