@@ -55,7 +55,6 @@ Skills with available="false" need dependencies installed first - you can try in
 
     def _get_identity(self) -> str:
         """Get the core identity section."""
-        workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
 
@@ -80,10 +79,11 @@ You are nanobot, a helpful AI assistant.
 {runtime}
 
 ## Workspace
-Your workspace is at: {workspace_path}
-- Long-term memory: {workspace_path}/memory/MEMORY.md (write important facts here)
-- History log: {workspace_path}/memory/HISTORY.md (grep-searchable). Each entry starts with [YYYY-MM-DD HH:MM].
-- Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
+Treat the workspace root as the current project root (`.`).
+Use relative paths by default unless the user explicitly asks for an absolute path.
+- Long-term memory: `memory/MEMORY.md` (write important facts here)
+- History log: `memory/HISTORY.md` (grep-searchable). Each entry starts with [YYYY-MM-DD HH:MM].
+- Custom skills: `skills/{skill-name}/SKILL.md`
 
 {platform_policy}
 
