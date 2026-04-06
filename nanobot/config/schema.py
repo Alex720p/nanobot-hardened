@@ -155,8 +155,8 @@ class MCPServerConfig(Base):
     tool_timeout: int = 30  # seconds before a tool call is cancelled
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # Only register these tools; accepts raw MCP names or wrapped mcp_<server>_<tool> names; ["*"] = all tools; [] = no tools
 
-class SandboxConfig(Base):
-    """Sandbox and tool execution configuration."""
+class ToolsConfig(Base):
+    """Tool and sandbox execution configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     workspace: WorkspaceSandboxConfig = Field(default_factory=WorkspaceSandboxConfig)
@@ -172,7 +172,7 @@ class Config(BaseSettings):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
-    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
 
     @property
     def workspace_path(self) -> Path:

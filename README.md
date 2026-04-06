@@ -1023,12 +1023,12 @@ That's it! Environment variables, model prefixing, config matching, and `nanobot
 ### Web Search
 
 > [!TIP]
-> Use `proxy` in `sandbox.web` to route all web requests (search + fetch) through a proxy:
+> Use `proxy` in `tools.web` to route all web requests (search + fetch) through a proxy:
 > ```json
-> { "sandbox": { "web": { "proxy": "http://127.0.0.1:7890" } } }
+> { "tools": { "web": { "proxy": "http://127.0.0.1:7890" } } }
 > ```
 
-nanobot supports multiple web search providers. Configure in `~/.nanobot/config.json` under `sandbox.web.search`.
+nanobot supports multiple web search providers. Configure in `~/.nanobot/config.json` under `tools.web.search`.
 
 | Provider | Config fields | Env var fallback | Free |
 |----------|--------------|------------------|------|
@@ -1043,7 +1043,7 @@ When credentials are missing, nanobot automatically falls back to DuckDuckGo.
 **Brave** (default):
 ```json
 {
-  "sandbox": {
+  "tools": {
     "web": {
       "search": {
         "provider": "brave",
@@ -1057,7 +1057,7 @@ When credentials are missing, nanobot automatically falls back to DuckDuckGo.
 **Tavily:**
 ```json
 {
-  "sandbox": {
+  "tools": {
     "web": {
       "search": {
         "provider": "tavily",
@@ -1071,7 +1071,7 @@ When credentials are missing, nanobot automatically falls back to DuckDuckGo.
 **Jina** (free tier with 10M tokens):
 ```json
 {
-  "sandbox": {
+  "tools": {
     "web": {
       "search": {
         "provider": "jina",
@@ -1085,7 +1085,7 @@ When credentials are missing, nanobot automatically falls back to DuckDuckGo.
 **SearXNG** (self-hosted, no API key needed):
 ```json
 {
-  "sandbox": {
+  "tools": {
     "web": {
       "search": {
         "provider": "searxng",
@@ -1099,7 +1099,7 @@ When credentials are missing, nanobot automatically falls back to DuckDuckGo.
 **DuckDuckGo** (zero config):
 ```json
 {
-  "sandbox": {
+  "tools": {
     "web": {
       "search": {
         "provider": "duckduckgo"
@@ -1127,7 +1127,7 @@ Add MCP servers to your `config.json`:
 
 ```json
 {
-  "sandbox": {
+  "tools": {
     "mcpServers": {
       "filesystem": {
         "command": "npx",
@@ -1155,7 +1155,7 @@ Use `toolTimeout` to override the default 30s per-call timeout for slow servers:
 
 ```json
 {
-  "sandbox": {
+  "tools": {
     "mcpServers": {
       "my-slow-server": {
         "url": "https://example.com/mcp/",
@@ -1201,9 +1201,9 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `sandbox.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
-| `sandbox.exec.enable` | `true` | When `false`, the shell `exec` tool is not registered at all. Use this to completely disable shell command execution. |
-| `sandbox.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
+| `tools.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
+| `tools.exec.enable` | `true` | When `false`, the shell `exec` tool is not registered at all. Use this to completely disable shell command execution. |
+| `tools.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
 | `channels.*.allowFrom` | `[]` (deny all) | Whitelist of user IDs. Empty denies all; use `["*"]` to allow everyone. |
 
 

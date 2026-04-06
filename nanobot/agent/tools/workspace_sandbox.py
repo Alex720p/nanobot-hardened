@@ -123,7 +123,7 @@ class WorkspaceSandboxManager:
             if not self.config.template_name:
                 raise RuntimeError(
                     "Workspace sandbox is required but not configured. "
-                    "Set sandbox.workspace.templateName in config.json."
+                    "Set tools.workspace.templateName in config.json."
                 )
 
             try:
