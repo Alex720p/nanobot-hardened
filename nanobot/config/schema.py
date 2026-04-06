@@ -114,6 +114,18 @@ class WebSandboxConfig(Base):
     run_timeout: int = 60
 
 
+class WorkspaceSandboxConfig(Base):
+    """Agent Sandbox configuration for workspace-backed filesystem tools."""
+
+    template_name: str = "workspace-sandbox-template"
+    namespace: str = "default"
+    gateway_name: str | None = None
+    gateway_namespace: str = "default"
+    api_url: str | None = None
+    server_port: int = 8888
+    request_timeout: int = 60
+
+
 class WebToolsConfig(Base):
     """Web tools configuration."""
 
@@ -147,6 +159,7 @@ class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
+    workspace: WorkspaceSandboxConfig = Field(default_factory=WorkspaceSandboxConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)

@@ -27,6 +27,7 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.workspace_sandbox import WorkspaceSandboxManager
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.utils.helpers import build_status_content
 from nanobot.bus.queue import MessageBus
@@ -35,7 +36,13 @@ from nanobot.runtime_logging import write_runtime_log
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebSandboxConfig, WebSearchConfig
+    from nanobot.config.schema import (
+        ChannelsConfig,
+        ExecToolConfig,
+        WebSandboxConfig,
+        WebSearchConfig,
+        WorkspaceSandboxConfig,
+    )
     from nanobot.cron.service import CronService
 
 
@@ -63,6 +70,7 @@ class AgentLoop:
         context_window_tokens: int = 65_536,
         web_search_config: WebSearchConfig | None = None,
         web_sandbox_config: WebSandboxConfig | None = None,
+        workspace_sandbox_config: WorkspaceSandboxConfig | None = None,
         web_proxy: str | None = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
@@ -71,7 +79,7 @@ class AgentLoop:
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig
+        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig, WorkspaceSandboxConfig
 
         self.bus = bus
         self.channels_config = channels_config
@@ -82,6 +90,7 @@ class AgentLoop:
         self.context_window_tokens = context_window_tokens
         self.web_search_config = web_search_config or WebSearchConfig()
         self.web_sandbox_config = web_sandbox_config or WebSandboxConfig()
+        self.workspace_sandbox_config = workspace_sandbox_config or WorkspaceSandboxConfig()
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
@@ -92,6 +101,7 @@ class AgentLoop:
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
+        self.workspace_sandbox = WorkspaceSandboxManager(self.workspace, self.workspace_sandbox_config)
         self.subagents = SubagentManager(
             provider=provider,
             workspace=workspace,
@@ -99,6 +109,7 @@ class AgentLoop:
             model=self.model,
             web_search_config=self.web_search_config,
             web_sandbox_config=self.web_sandbox_config,
+            workspace_sandbox_config=self.workspace_sandbox_config,
             web_proxy=web_proxy,
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
@@ -127,9 +138,22 @@ class AgentLoop:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
-        self.tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read))
+        self.tools.register(
+            ReadFileTool(
+                workspace=self.workspace,
+                allowed_dir=allowed_dir,
+                extra_allowed_dirs=extra_read,
+                workspace_sandbox=self.workspace_sandbox,
+            )
+        )
         for cls in (WriteFileTool, EditFileTool, ListDirTool):
-            self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
+            self.tools.register(
+                cls(
+                    workspace=self.workspace,
+                    allowed_dir=allowed_dir,
+                    workspace_sandbox=self.workspace_sandbox,
+                )
+            )
         if self.exec_config.enable:
             self.tools.register(ExecTool(
                 working_dir=str(self.workspace),
@@ -384,10 +408,11 @@ class AgentLoop:
                 ))
 
     async def close_mcp(self) -> None:
-        """Drain pending background archives, then close MCP connections."""
+        """Drain pending background work, release workspace sandbox, then close MCP connections."""
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
             self._background_tasks.clear()
+        await asyncio.to_thread(self.workspace_sandbox.close)
         if self._mcp_stack:
             try:
                 await self._mcp_stack.aclose()

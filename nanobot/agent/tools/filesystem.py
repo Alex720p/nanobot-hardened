@@ -1,11 +1,15 @@
 """File system tools: read, write, edit, list."""
 
+from __future__ import annotations
+
+import asyncio
 import difflib
 import mimetypes
 from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
+from nanobot.agent.tools.workspace_sandbox import WorkspaceSandboxManager
 from nanobot.utils.helpers import build_image_content_blocks, detect_image_mime
 
 
@@ -36,25 +40,55 @@ def _is_under(path: Path, directory: Path) -> bool:
 
 
 class _FsTool(Tool):
-    """Shared base for filesystem tools — common init and path resolution."""
+    """Shared base for filesystem tools: path policy plus workspace-sandbox routing."""
 
     def __init__(
         self,
         workspace: Path | None = None,
         allowed_dir: Path | None = None,
         extra_allowed_dirs: list[Path] | None = None,
+        workspace_sandbox: WorkspaceSandboxManager | None = None,
     ):
         self._workspace = workspace
         self._allowed_dir = allowed_dir
         self._extra_allowed_dirs = extra_allowed_dirs
+        self._workspace_sandbox = workspace_sandbox
 
     def _resolve(self, path: str) -> Path:
-        return _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
+        resolved = _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
+        if not self._workspace:
+            raise RuntimeError("Workspace is required for sandbox-backed filesystem tools.")
+        if not _is_under(resolved, self._workspace):
+            raise PermissionError(
+                f"Sandbox-backed filesystem tools only support paths inside the workspace: {path}"
+            )
+        return resolved
+
+    def _require_workspace_sandbox(self, path: Path) -> WorkspaceSandboxManager:
+        if not self._workspace_sandbox:
+            raise RuntimeError(f"Workspace sandbox manager is required for workspace path: {path}")
+        return self._workspace_sandbox
+
+    def _exists_sync(self, path: Path) -> bool:
+        return self._require_workspace_sandbox(path).exists(path)
+
+    def _entry_type_sync(self, path: Path) -> str | None:
+        return self._require_workspace_sandbox(path).entry_type(path)
+
+    def _read_bytes_sync(self, path: Path) -> bytes:
+        return self._require_workspace_sandbox(path).read_bytes(path)
+
+    def _write_bytes_sync(self, path: Path, content: bytes) -> None:
+        self._require_workspace_sandbox(path).write_bytes(path, content)
+
+    def _list_entries_sync(self, path: Path) -> list[dict[str, Any]]:
+        return self._require_workspace_sandbox(path).list_entries(path)
 
 
 # ---------------------------------------------------------------------------
 # read_file
 # ---------------------------------------------------------------------------
+
 
 class ReadFileTool(_FsTool):
     """Read file contents with optional line-based pagination."""
@@ -96,12 +130,13 @@ class ReadFileTool(_FsTool):
     async def execute(self, path: str, offset: int = 1, limit: int | None = None, **kwargs: Any) -> Any:
         try:
             fp = self._resolve(path)
-            if not fp.exists():
+            entry_type = await asyncio.to_thread(self._entry_type_sync, fp)
+            if entry_type is None:
                 return f"Error: File not found: {path}"
-            if not fp.is_file():
+            if entry_type != "file":
                 return f"Error: Not a file: {path}"
 
-            raw = fp.read_bytes()
+            raw = await asyncio.to_thread(self._read_bytes_sync, fp)
             if not raw:
                 return f"(Empty file: {path})"
 
@@ -112,7 +147,10 @@ class ReadFileTool(_FsTool):
             try:
                 text_content = raw.decode("utf-8")
             except UnicodeDecodeError:
-                return f"Error: Cannot read binary file {path} (MIME: {mime or 'unknown'}). Only UTF-8 text and images are supported."
+                return (
+                    f"Error: Cannot read binary file {path} (MIME: {mime or 'unknown'}). "
+                    "Only UTF-8 text and images are supported."
+                )
 
             all_lines = text_content.splitlines()
             total = len(all_lines)
@@ -152,6 +190,7 @@ class ReadFileTool(_FsTool):
 # write_file
 # ---------------------------------------------------------------------------
 
+
 class WriteFileTool(_FsTool):
     """Write content to a file."""
 
@@ -177,8 +216,10 @@ class WriteFileTool(_FsTool):
     async def execute(self, path: str, content: str, **kwargs: Any) -> str:
         try:
             fp = self._resolve(path)
-            fp.parent.mkdir(parents=True, exist_ok=True)
-            fp.write_text(content, encoding="utf-8")
+            entry_type = await asyncio.to_thread(self._entry_type_sync, fp)
+            if entry_type == "directory":
+                return f"Error: Not a file: {path}"
+            await asyncio.to_thread(self._write_bytes_sync, fp, content.encode("utf-8"))
             return f"Successfully wrote {len(content)} bytes to {fp}"
         except PermissionError as e:
             return f"Error: {e}"
@@ -189,6 +230,7 @@ class WriteFileTool(_FsTool):
 # ---------------------------------------------------------------------------
 # edit_file
 # ---------------------------------------------------------------------------
+
 
 def _find_match(content: str, old_text: str) -> tuple[str | None, int]:
     """Locate old_text in content: exact first, then line-trimmed sliding window.
@@ -248,15 +290,22 @@ class EditFileTool(_FsTool):
         }
 
     async def execute(
-        self, path: str, old_text: str, new_text: str,
-        replace_all: bool = False, **kwargs: Any,
+        self,
+        path: str,
+        old_text: str,
+        new_text: str,
+        replace_all: bool = False,
+        **kwargs: Any,
     ) -> str:
         try:
             fp = self._resolve(path)
-            if not fp.exists():
+            entry_type = await asyncio.to_thread(self._entry_type_sync, fp)
+            if entry_type is None:
                 return f"Error: File not found: {path}"
+            if entry_type != "file":
+                return f"Error: Not a file: {path}"
 
-            raw = fp.read_bytes()
+            raw = await asyncio.to_thread(self._read_bytes_sync, fp)
             uses_crlf = b"\r\n" in raw
             content = raw.decode("utf-8").replace("\r\n", "\n")
             match, count = _find_match(content, old_text.replace("\r\n", "\n"))
@@ -274,7 +323,7 @@ class EditFileTool(_FsTool):
             if uses_crlf:
                 new_content = new_content.replace("\n", "\r\n")
 
-            fp.write_bytes(new_content.encode("utf-8"))
+            await asyncio.to_thread(self._write_bytes_sync, fp, new_content.encode("utf-8"))
             return f"Successfully edited {fp}"
         except PermissionError as e:
             return f"Error: {e}"
@@ -295,18 +344,23 @@ class EditFileTool(_FsTool):
 
         if best_ratio > 0.5:
             diff = "\n".join(difflib.unified_diff(
-                old_lines, lines[best_start : best_start + window],
+                old_lines,
+                lines[best_start : best_start + window],
                 fromfile="old_text (provided)",
                 tofile=f"{path} (actual, line {best_start + 1})",
                 lineterm="",
             ))
-            return f"Error: old_text not found in {path}.\nBest match ({best_ratio:.0%} similar) at line {best_start + 1}:\n{diff}"
+            return (
+                f"Error: old_text not found in {path}.\n"
+                f"Best match ({best_ratio:.0%} similar) at line {best_start + 1}:\n{diff}"
+            )
         return f"Error: old_text not found in {path}. No similar text found. Verify the file content."
 
 
 # ---------------------------------------------------------------------------
 # list_dir
 # ---------------------------------------------------------------------------
+
 
 class ListDirTool(_FsTool):
     """List directory contents with optional recursion."""
@@ -350,36 +404,26 @@ class ListDirTool(_FsTool):
         }
 
     async def execute(
-        self, path: str, recursive: bool = False,
-        max_entries: int | None = None, **kwargs: Any,
+        self,
+        path: str,
+        recursive: bool = False,
+        max_entries: int | None = None,
+        **kwargs: Any,
     ) -> str:
         try:
             dp = self._resolve(path)
-            if not dp.exists():
+            entry_type = await asyncio.to_thread(self._entry_type_sync, dp)
+            if entry_type is None:
                 return f"Error: Directory not found: {path}"
-            if not dp.is_dir():
+            if entry_type != "directory":
                 return f"Error: Not a directory: {path}"
 
             cap = max_entries or self._DEFAULT_MAX
-            items: list[str] = []
-            total = 0
 
             if recursive:
-                for item in sorted(dp.rglob("*")):
-                    if any(p in self._IGNORE_DIRS for p in item.parts):
-                        continue
-                    total += 1
-                    if len(items) < cap:
-                        rel = item.relative_to(dp)
-                        items.append(f"{rel}/" if item.is_dir() else str(rel))
+                items, total = await asyncio.to_thread(self._collect_recursive_entries, dp, cap)
             else:
-                for item in sorted(dp.iterdir()):
-                    if item.name in self._IGNORE_DIRS:
-                        continue
-                    total += 1
-                    if len(items) < cap:
-                        pfx = "📁 " if item.is_dir() else "📄 "
-                        items.append(f"{pfx}{item.name}")
+                items, total = await asyncio.to_thread(self._collect_shallow_entries, dp, cap)
 
             if not items and total == 0:
                 return f"Directory {path} is empty"
@@ -392,3 +436,35 @@ class ListDirTool(_FsTool):
             return f"Error: {e}"
         except Exception as e:
             return f"Error listing directory: {e}"
+
+    def _collect_shallow_entries(self, directory: Path, cap: int) -> tuple[list[str], int]:
+        items: list[str] = []
+        total = 0
+        for entry in sorted(self._list_entries_sync(directory), key=lambda item: item["name"]):
+            if entry["name"] in self._IGNORE_DIRS:
+                continue
+            total += 1
+            if len(items) < cap:
+                prefix = "📁 " if entry["type"] == "directory" else "📄 "
+                items.append(f"{prefix}{entry['name']}")
+        return items, total
+
+    def _collect_recursive_entries(self, root: Path, cap: int) -> tuple[list[str], int]:
+        items: list[str] = []
+        total = 0
+
+        def walk(directory: Path) -> None:
+            nonlocal total
+            for entry in sorted(self._list_entries_sync(directory), key=lambda item: item["name"]):
+                if entry["name"] in self._IGNORE_DIRS:
+                    continue
+                child = directory / entry["name"]
+                total += 1
+                if len(items) < cap:
+                    rel = child.relative_to(root).as_posix()
+                    items.append(f"{rel}/" if entry["type"] == "directory" else rel)
+                if entry["type"] == "directory":
+                    walk(child)
+
+        walk(root)
+        return items, total

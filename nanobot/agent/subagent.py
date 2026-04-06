@@ -14,6 +14,7 @@ from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTo
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.workspace_sandbox import WorkspaceSandboxManager
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import ExecToolConfig
@@ -33,11 +34,12 @@ class SubagentManager:
         model: str | None = None,
         web_search_config: "WebSearchConfig | None" = None,
         web_sandbox_config: "WebSandboxConfig | None" = None,
+        workspace_sandbox_config: "WorkspaceSandboxConfig | None" = None,
         web_proxy: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig
+        from nanobot.config.schema import ExecToolConfig, WebSandboxConfig, WebSearchConfig, WorkspaceSandboxConfig
 
         self.provider = provider
         self.workspace = workspace
@@ -45,6 +47,7 @@ class SubagentManager:
         self.model = model or provider.get_default_model()
         self.web_search_config = web_search_config or WebSearchConfig()
         self.web_sandbox_config = web_sandbox_config or WebSandboxConfig()
+        self.workspace_sandbox_config = workspace_sandbox_config or WorkspaceSandboxConfig()
         self.web_proxy = web_proxy
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
@@ -96,12 +99,38 @@ class SubagentManager:
         try:
             # Build subagent tools (no message tool, no spawn tool)
             tools = ToolRegistry()
+            workspace_sandbox = WorkspaceSandboxManager(self.workspace, self.workspace_sandbox_config)
             allowed_dir = self.workspace if self.restrict_to_workspace else None
             extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
-            tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read))
-            tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
+            tools.register(
+                ReadFileTool(
+                    workspace=self.workspace,
+                    allowed_dir=allowed_dir,
+                    extra_allowed_dirs=extra_read,
+                    workspace_sandbox=workspace_sandbox,
+                )
+            )
+            tools.register(
+                WriteFileTool(
+                    workspace=self.workspace,
+                    allowed_dir=allowed_dir,
+                    workspace_sandbox=workspace_sandbox,
+                )
+            )
+            tools.register(
+                EditFileTool(
+                    workspace=self.workspace,
+                    allowed_dir=allowed_dir,
+                    workspace_sandbox=workspace_sandbox,
+                )
+            )
+            tools.register(
+                ListDirTool(
+                    workspace=self.workspace,
+                    allowed_dir=allowed_dir,
+                    workspace_sandbox=workspace_sandbox,
+                )
+            )
             tools.register(ExecTool(
                 working_dir=str(self.workspace),
                 timeout=self.exec_config.timeout,
@@ -175,6 +204,9 @@ class SubagentManager:
             error_msg = f"Error: {str(e)}"
             logger.error("Subagent [{}] failed: {}", task_id, e)
             await self._announce_result(task_id, label, task, error_msg, origin, "error")
+        finally:
+            if "workspace_sandbox" in locals():
+                await asyncio.to_thread(workspace_sandbox.close)
 
     async def _announce_result(
         self,
