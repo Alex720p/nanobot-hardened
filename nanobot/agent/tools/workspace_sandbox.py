@@ -120,6 +120,11 @@ class WorkspaceSandboxManager:
                 raise RuntimeError("Workspace sandbox manager is already closed.")
             if self._sandbox is not None:
                 return self._sandbox
+            if not self.config.template_name:
+                raise RuntimeError(
+                    "Workspace sandbox is required but not configured. "
+                    "Set sandbox.workspace.templateName in config.json."
+                )
 
             try:
                 sandbox_client_cls = _get_sandbox_client_class()

@@ -249,7 +249,7 @@ class WebFetchTool(Tool):
                 {
                     "error": (
                         "Sandbox web_fetch is required but not configured. "
-                        "Set tools.web.sandbox.templateName in config.json."
+                        "Set sandbox.web.sandbox.templateName in config.json."
                     ),
                     "url": url,
                 },

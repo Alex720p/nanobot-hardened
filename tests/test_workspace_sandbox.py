@@ -148,7 +148,17 @@ def sandboxed_manager(monkeypatch, tmp_path):
         "nanobot.agent.tools.workspace_sandbox._get_sandbox_client_class",
         lambda: _FakeSandboxClient,
     )
-    return WorkspaceSandboxManager(tmp_path, WorkspaceSandboxConfig())
+    return WorkspaceSandboxManager(
+        tmp_path,
+        WorkspaceSandboxConfig(template_name="workspace-sandbox-template"),
+    )
+
+
+def test_workspace_sandbox_requires_explicit_template_name(tmp_path):
+    manager = WorkspaceSandboxManager(tmp_path, WorkspaceSandboxConfig())
+
+    with pytest.raises(RuntimeError, match="Workspace sandbox is required but not configured"):
+        manager.exists(tmp_path / "file.txt")
 
 
 @pytest.mark.asyncio
