@@ -213,7 +213,7 @@ async def test_workspace_tools_use_sandbox_only_for_nested_paths(sandboxed_manag
 
 
 @pytest.mark.asyncio
-async def test_read_file_extra_allowed_dir_is_rejected_for_sandbox_only_tools(
+async def test_read_file_outside_workspace_is_rejected_for_sandbox_only_tools(
     monkeypatch,
     sandboxed_manager,
     tmp_path,
@@ -228,8 +228,6 @@ async def test_read_file_extra_allowed_dir_is_rejected_for_sandbox_only_tools(
 
     tool = ReadFileTool(
         workspace=workspace,
-        allowed_dir=workspace,
-        extra_allowed_dirs=[skills_dir],
         workspace_sandbox=sandboxed_manager,
     )
     result = await tool.execute(path=str(skill_file))

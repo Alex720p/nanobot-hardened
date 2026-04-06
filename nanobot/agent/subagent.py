@@ -9,7 +9,6 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
@@ -100,34 +99,27 @@ class SubagentManager:
             # Build subagent tools (no message tool, no spawn tool)
             tools = ToolRegistry()
             workspace_sandbox = WorkspaceSandboxManager(self.workspace, self.workspace_sandbox_config)
-            allowed_dir = self.workspace if self.restrict_to_workspace else None
-            extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
             tools.register(
                 ReadFileTool(
                     workspace=self.workspace,
-                    allowed_dir=allowed_dir,
-                    extra_allowed_dirs=extra_read,
                     workspace_sandbox=workspace_sandbox,
                 )
             )
             tools.register(
                 WriteFileTool(
                     workspace=self.workspace,
-                    allowed_dir=allowed_dir,
                     workspace_sandbox=workspace_sandbox,
                 )
             )
             tools.register(
                 EditFileTool(
                     workspace=self.workspace,
-                    allowed_dir=allowed_dir,
                     workspace_sandbox=workspace_sandbox,
                 )
             )
             tools.register(
                 ListDirTool(
                     workspace=self.workspace,
-                    allowed_dir=allowed_dir,
                     workspace_sandbox=workspace_sandbox,
                 )
             )

@@ -16,19 +16,12 @@ from nanobot.utils.helpers import build_image_content_blocks, detect_image_mime
 def _resolve_path(
     path: str,
     workspace: Path | None = None,
-    allowed_dir: Path | None = None,
-    extra_allowed_dirs: list[Path] | None = None,
 ) -> Path:
-    """Resolve path against workspace (if relative) and enforce directory restriction."""
-    p = Path(path).expanduser()
+    """Resolve path against workspace (if relative)."""
+    p = Path(path)
     if not p.is_absolute() and workspace:
         p = workspace / p
-    resolved = p.resolve()
-    if allowed_dir:
-        all_dirs = [allowed_dir] + (extra_allowed_dirs or [])
-        if not any(_is_under(resolved, d) for d in all_dirs):
-            raise PermissionError(f"Path {path} is outside allowed directory {allowed_dir}")
-    return resolved
+    return p.resolve()
 
 
 def _is_under(path: Path, directory: Path) -> bool:
@@ -45,17 +38,13 @@ class _FsTool(Tool):
     def __init__(
         self,
         workspace: Path | None = None,
-        allowed_dir: Path | None = None,
-        extra_allowed_dirs: list[Path] | None = None,
         workspace_sandbox: WorkspaceSandboxManager | None = None,
     ):
         self._workspace = workspace
-        self._allowed_dir = allowed_dir
-        self._extra_allowed_dirs = extra_allowed_dirs
         self._workspace_sandbox = workspace_sandbox
 
     def _resolve(self, path: str) -> Path:
-        resolved = _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
+        resolved = _resolve_path(path, self._workspace)
         if not self._workspace:
             raise RuntimeError("Workspace is required for sandbox-backed filesystem tools.")
         if not _is_under(resolved, self._workspace):
@@ -142,7 +131,7 @@ class ReadFileTool(_FsTool):
 
             mime = detect_image_mime(raw) or mimetypes.guess_type(path)[0]
             if mime and mime.startswith("image/"):
-                return build_image_content_blocks(raw, mime, str(fp), f"(Image file: {path})")
+                return build_image_content_blocks(raw, mime, path, f"(Image file: {path})")
 
             try:
                 text_content = raw.decode("utf-8")
@@ -220,7 +209,7 @@ class WriteFileTool(_FsTool):
             if entry_type == "directory":
                 return f"Error: Not a file: {path}"
             await asyncio.to_thread(self._write_bytes_sync, fp, content.encode("utf-8"))
-            return f"Successfully wrote {len(content)} bytes to {fp}"
+            return f"Successfully wrote {len(content)} bytes to {path}"
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
@@ -324,7 +313,7 @@ class EditFileTool(_FsTool):
                 new_content = new_content.replace("\n", "\r\n")
 
             await asyncio.to_thread(self._write_bytes_sync, fp, new_content.encode("utf-8"))
-            return f"Successfully edited {fp}"
+            return f"Successfully edited {path}"
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:

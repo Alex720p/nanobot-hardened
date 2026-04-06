@@ -107,6 +107,18 @@ class TestReadFileTool:
         assert result[1] == {"type": "text", "text": f"(Image file: {f})"}
 
     @pytest.mark.asyncio
+    async def test_image_file_keeps_requested_relative_path_in_metadata(self, tmp_path):
+        f = tmp_path / "pixel.png"
+        f.write_bytes(b"\x89PNG\r\n\x1a\nfake-png-data")
+        tool = ReadFileTool(workspace=tmp_path, workspace_sandbox=_FakeWorkspaceSandbox(tmp_path))
+
+        result = await tool.execute(path="pixel.png")
+
+        assert isinstance(result, list)
+        assert result[0]["_meta"]["path"] == "pixel.png"
+        assert result[1] == {"type": "text", "text": "(Image file: pixel.png)"}
+
+    @pytest.mark.asyncio
     async def test_file_not_found(self, tool, tmp_path):
         result = await tool.execute(path=str(tmp_path / "nope.txt"))
         assert "Error" in result
@@ -183,8 +195,9 @@ class TestEditFileTool:
     async def test_exact_match(self, tool, tmp_path):
         f = tmp_path / "a.py"
         f.write_text("hello world", encoding="utf-8")
-        result = await tool.execute(path=str(f), old_text="world", new_text="earth")
+        result = await tool.execute(path="a.py", old_text="world", new_text="earth")
         assert "Successfully" in result
+        assert result.endswith("a.py")
         assert f.read_text() == "hello earth"
 
     @pytest.mark.asyncio
@@ -222,9 +235,10 @@ class TestEditFileTool:
         f = tmp_path / "multi.py"
         f.write_text("foo bar foo bar foo", encoding="utf-8")
         result = await tool.execute(
-            path=str(f), old_text="foo", new_text="baz", replace_all=True,
+            path="multi.py", old_text="foo", new_text="baz", replace_all=True,
         )
         assert "Successfully" in result
+        assert result.endswith("multi.py")
         assert f.read_text() == "baz bar baz bar baz"
 
     @pytest.mark.asyncio
@@ -302,7 +316,7 @@ class TestListDirTool:
 
 
 # ---------------------------------------------------------------------------
-# Workspace restriction + extra_allowed_dirs
+# Workspace restriction
 # ---------------------------------------------------------------------------
 
 class TestWorkspaceRestriction:
@@ -318,7 +332,6 @@ class TestWorkspaceRestriction:
 
         tool = ReadFileTool(
             workspace=workspace,
-            allowed_dir=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(path=str(secret))
@@ -326,7 +339,7 @@ class TestWorkspaceRestriction:
         assert "outside" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_read_extra_dir_rejected_for_sandbox_only_tools(self, tmp_path):
+    async def test_read_outside_workspace_rejected_for_sandbox_only_tools(self, tmp_path):
         workspace = tmp_path / "ws"
         workspace.mkdir()
         skills_dir = tmp_path / "skills"
@@ -336,8 +349,7 @@ class TestWorkspaceRestriction:
         skill_file.write_text("# Test Skill\nDo something.")
 
         tool = ReadFileTool(
-            workspace=workspace, allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(path=str(skill_file))
@@ -355,7 +367,6 @@ class TestWorkspaceRestriction:
 
         tool = WriteFileTool(
             workspace=workspace,
-            allowed_dir=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(path=str(outside / "hack.txt"), content="pwned")
@@ -374,27 +385,22 @@ class TestWorkspaceRestriction:
         secret.write_text("nope")
 
         tool = ReadFileTool(
-            workspace=workspace, allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(path=str(secret))
         assert "Error" in result
-        assert "outside" in result.lower()
+        assert "workspace" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_workspace_file_still_readable_with_extra_dirs(self, tmp_path):
-        """extra_allowed_dirs must not break normal sandbox-backed workspace reads."""
+    async def test_workspace_file_still_readable(self, tmp_path):
         workspace = tmp_path / "ws"
         workspace.mkdir()
         ws_file = workspace / "README.md"
         ws_file.write_text("hello from workspace")
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
 
         tool = ReadFileTool(
-            workspace=workspace, allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(path=str(ws_file))
@@ -402,8 +408,8 @@ class TestWorkspaceRestriction:
         assert "Error" not in result
 
     @pytest.mark.asyncio
-    async def test_edit_blocked_in_extra_dir(self, tmp_path):
-        """edit_file must not be able to modify files in extra_allowed_dirs."""
+    async def test_edit_blocked_outside_workspace(self, tmp_path):
+        """edit_file must not be able to modify files outside the workspace."""
         workspace = tmp_path / "ws"
         workspace.mkdir()
         skills_dir = tmp_path / "skills"
@@ -414,7 +420,6 @@ class TestWorkspaceRestriction:
 
         tool = EditFileTool(
             workspace=workspace,
-            allowed_dir=workspace,
             workspace_sandbox=_FakeWorkspaceSandbox(workspace),
         )
         result = await tool.execute(
@@ -423,5 +428,5 @@ class TestWorkspaceRestriction:
             new_text="Hacked content.",
         )
         assert "Error" in result
-        assert "outside" in result.lower()
+        assert "workspace" in result.lower()
         assert skill_file.read_text() == "# Weather\nOriginal content."
