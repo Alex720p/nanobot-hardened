@@ -160,6 +160,11 @@ pip install nanobot-ai
 
 nanobot can run outbound page fetching, shell execution, and workspace file operations inside isolated Kubernetes sandboxes. This is required for hardened `web_fetch`, `exec`, and file tools.
 
+Use a source checkout of this repository for the hardened isolation flow. The helper script and manifests live under `scripts/` and `sandbox/`.
+
+> [!IMPORTANT]
+> The isolation setup in this branch is closer to a proof of concept than a polished production installer. Expect rough edges, environment-specific failures, missing cleanup paths, version mismatches, and operational issues. Treat it as an experimental hardening direction that you should inspect, test, and adapt before relying on it.
+
 For a fresh Linux server, install the isolation stack from the repository root:
 
 ```bash
@@ -280,7 +285,7 @@ Configure your provider and model first. If you want `web_fetch`, `exec`, or wor
 nanobot agent
 ```
 
-That's it! You have a working AI assistant in 2 minutes.
+That's it for basic chat. Add the isolation stack when you want page fetching, shell commands, or workspace-backed file tools.
 
 ## 💬 Chat Apps
 
@@ -1081,6 +1086,7 @@ That's it! Environment variables, model prefixing, config matching, and `nanobot
 > ```json
 > { "tools": { "web": { "proxy": "http://127.0.0.1:7890" } } }
 > ```
+> For sandboxed `web_fetch`, the proxy must be reachable from inside the `network-sandbox-template` pod. `127.0.0.1` means the sandbox itself, not the host running nanobot.
 
 nanobot supports multiple web search providers. Configure in `~/.nanobot/config.json` under `tools.web.search`.
 
@@ -1243,19 +1249,16 @@ Use `enabledTools` to register only a subset of tools from an MCP server:
 - Set `enabledTools` to a non-empty list of names to register only that subset.
 
 MCP tools are automatically discovered and registered on startup. The LLM can use them alongside built-in tools — no extra configuration needed.
-
-
-
-
 ### Security
 
 > [!TIP]
-> For production deployments, set `"restrictToWorkspace": true` in your config to constrain built-in tools to the configured workspace path.
+> In the hardened runtime, built-in file tools are workspace-scoped and shell execution runs inside the workspace sandbox. For production deployments, set `"restrictToWorkspace": true` as an additional shell-command path guard.
+>
 > In `v0.1.4.post3` and earlier, an empty `allowFrom` allowed all senders. Since `v0.1.4.post4`, empty `allowFrom` denies all access by default. To allow all senders, set `"allowFrom": ["*"]`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `tools.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
+| `tools.restrictToWorkspace` | `false` | Adds a shell-command guard for path traversal and absolute paths outside the working directory. File tools are already workspace-scoped in the hardened runtime. |
 | `tools.exec.enable` | `true` | When `false`, the shell `exec` tool is not registered at all. Use this to completely disable shell command execution. |
 | `tools.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
 | `channels.*.allowFrom` | `[]` (deny all) | Whitelist of user IDs. Empty denies all; use `["*"]` to allow everyone. |
@@ -1304,6 +1307,8 @@ The script installs and configures the local Kubernetes stack, Calico networking
 
 > [!WARNING]
 > This script comes without any guarantees. It is intended as a practical bootstrap helper for dedicated Linux machines, not as a universal installer. It can install packages, reset local Kubernetes state, change container runtime configuration, and apply cluster manifests. Inspect it first and prefer a fresh VM.
+>
+> This isolation architecture is still experimental and proof-of-concept quality. It has many known and unknown issues, especially around host compatibility, dependency versions, Kubernetes lifecycle management, cleanup, and multi-instance operations.
 
 Before running it, confirm that the host has KVM:
 
@@ -1394,74 +1399,27 @@ The current branch pins `k8s-agent-sandbox==0.2.1`.
 
 ## 🧩 Multiple Instances
 
-Run multiple nanobot instances simultaneously with separate configs and runtime data. Use `--config` as the main entrypoint. Optionally pass `--workspace` during `onboard` when you want to initialize or update the saved workspace for a specific instance.
+Run multiple nanobot gateways or CLI agents from the same installation by giving each one its own config file. In the hardened runtime, there are two layers to think about:
 
-### Quick Start
+| Layer | Controlled by | What it isolates |
+|-------|---------------|------------------|
+| **nanobot instance data** | `--config`, `agents.defaults.workspace`, `gateway.port`, channel credentials | Sessions, memory files, skills, Cron jobs, media/runtime state, enabled channels, model/provider choices |
+| **Kubernetes sandbox execution** | `tools.web.sandbox.*` and `tools.workspace.*` | Which Agent Sandbox templates and namespaces are used for `web_fetch`, file tools, and `exec` |
 
-If you want each instance to have its own dedicated workspace from the start, pass both `--config` and `--workspace` during onboarding.
+The default sandbox templates can be shared by many nanobot instances. Each running gateway or CLI agent creates its own sandbox claims from those templates. If you need stronger tenant separation, create per-instance Kubernetes namespaces and point each config at templates in that namespace.
 
-**Initialize instances:**
+### Recommended Setup
 
 ```bash
-# Create separate instance configs and workspaces
+# Create separate instance configs and host workspaces
 nanobot onboard --config ~/.nanobot-telegram/config.json --workspace ~/.nanobot-telegram/workspace
 nanobot onboard --config ~/.nanobot-discord/config.json --workspace ~/.nanobot-discord/workspace
 nanobot onboard --config ~/.nanobot-feishu/config.json --workspace ~/.nanobot-feishu/workspace
 ```
 
-**Configure each instance:**
+Then edit each config with its own channel credentials, model/provider settings, gateway port, and sandbox template settings.
 
-Edit `~/.nanobot-telegram/config.json`, `~/.nanobot-discord/config.json`, etc. with different channel settings. The workspace you passed during `onboard` is saved into each config as that instance's default workspace.
-
-**Run instances:**
-
-```bash
-# Instance A - Telegram bot
-nanobot gateway --config ~/.nanobot-telegram/config.json
-
-# Instance B - Discord bot  
-nanobot gateway --config ~/.nanobot-discord/config.json
-
-# Instance C - Feishu bot with custom port
-nanobot gateway --config ~/.nanobot-feishu/config.json --port 18792
-```
-
-### Path Resolution
-
-When using `--config`, nanobot derives its runtime data directory from the config file location. The workspace still comes from `agents.defaults.workspace` unless you override it with `--workspace`.
-
-To open a CLI session against one of these instances locally:
-
-```bash
-nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello from Telegram instance"
-nanobot agent -c ~/.nanobot-discord/config.json -m "Hello from Discord instance"
-
-# Optional one-off workspace override
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test
-```
-
-> `nanobot agent` starts a local CLI agent using the selected workspace/config. It does not attach to or proxy through an already running `nanobot gateway` process.
-
-| Component | Resolved From | Example |
-|-----------|---------------|---------|
-| **Config** | `--config` path | `~/.nanobot-A/config.json` |
-| **Workspace** | `--workspace` or config | `~/.nanobot-A/workspace/` |
-| **Cron Jobs** | config directory | `~/.nanobot-A/cron/` |
-| **Media / runtime state** | config directory | `~/.nanobot-A/media/` |
-
-### How It Works
-
-- `--config` selects which config file to load
-- By default, the workspace comes from `agents.defaults.workspace` in that config
-- If you pass `--workspace`, it overrides the workspace from the config file
-
-### Minimal Setup
-
-1. Copy your base config into a new instance directory.
-2. Set a different `agents.defaults.workspace` for that instance.
-3. Start the instance with `--config`.
-
-Example config:
+Example `~/.nanobot-telegram/config.json` excerpt:
 
 ```json
 {
@@ -1479,36 +1437,138 @@ Example config:
   },
   "gateway": {
     "port": 18790
+  },
+  "tools": {
+    "web": {
+      "sandbox": {
+        "templateName": "network-sandbox-template",
+        "namespace": "default",
+        "runTimeout": 60
+      }
+    },
+    "workspace": {
+      "templateName": "workspace-sandbox-template",
+      "namespace": "default",
+      "gatewayName": null,
+      "gatewayNamespace": "default",
+      "apiUrl": null,
+      "serverPort": 8888,
+      "requestTimeout": 60
+    }
   }
 }
 ```
 
-Start separate instances:
+Start separate gateways:
 
 ```bash
 nanobot gateway --config ~/.nanobot-telegram/config.json
 nanobot gateway --config ~/.nanobot-discord/config.json
+nanobot gateway --config ~/.nanobot-feishu/config.json
 ```
 
-Override workspace for one-off runs when needed:
+Each gateway should use a different `gateway.port` if it exposes the HTTP gateway at the same time.
+
+### Path and State Resolution
+
+When `--config` is set, nanobot uses that config file as the instance root for runtime state. The workspace still comes from `agents.defaults.workspace` unless you pass `--workspace`.
+
+| Component | Resolved from | Example |
+|-----------|---------------|---------|
+| **Config** | `--config` path | `~/.nanobot-telegram/config.json` |
+| **Runtime data directory** | Parent directory of the config file | `~/.nanobot-telegram/` |
+| **Logical workspace root** | `--workspace` or `agents.defaults.workspace` | `~/.nanobot-telegram/workspace/` |
+| **Sessions** | Workspace | `~/.nanobot-telegram/workspace/sessions/` |
+| **Memory and skills** | Workspace | `~/.nanobot-telegram/workspace/memory/`, `~/.nanobot-telegram/workspace/skills/` |
+| **Cron jobs** | Config directory | `~/.nanobot-telegram/cron/jobs.json` |
+| **Media/runtime state** | Config directory | `~/.nanobot-telegram/media/` |
+| **Web sandbox template** | `tools.web.sandbox` | `network-sandbox-template` in namespace `default` |
+| **Workspace sandbox template** | `tools.workspace` | `workspace-sandbox-template` in namespace `default` |
+
+The logical workspace path is still used for prompts, memory, sessions, skills, and path validation. Sandbox-backed file tools and `exec` run inside the workspace sandbox created by the current process, so `--workspace` does not by itself change the Kubernetes namespace or sandbox template.
+
+`--workspace` is useful for one-off tests:
 
 ```bash
 nanobot gateway --config ~/.nanobot-telegram/config.json --workspace /tmp/nanobot-telegram-test
 ```
 
-### Common Use Cases
+It changes the nanobot workspace path for that run, but it does not change the Kubernetes sandbox template or namespace. To move tool execution to a different sandbox namespace, edit `tools.web.sandbox.namespace` and `tools.workspace.namespace`.
 
-- Run separate bots for Telegram, Discord, Feishu, and other platforms
-- Keep testing and production instances isolated
-- Use different models or providers for different teams
-- Serve multiple tenants with separate configs and runtime data
+### CLI Sessions
+
+To open a local CLI session with one instance's config:
+
+```bash
+nanobot agent --config ~/.nanobot-telegram/config.json -m "Hello from Telegram instance"
+nanobot agent --config ~/.nanobot-discord/config.json -m "Hello from Discord instance"
+```
+
+> `nanobot agent` starts a separate local agent process. It does not attach to an already running `nanobot gateway`, and it will create its own sandbox claims when it uses sandbox-backed tools.
+
+### Kubernetes Namespace Isolation
+
+The out-of-the-box config uses both templates in the `default` namespace:
+
+```json
+{
+  "tools": {
+    "web": {
+      "sandbox": {
+        "templateName": "network-sandbox-template",
+        "namespace": "default"
+      }
+    },
+    "workspace": {
+      "templateName": "workspace-sandbox-template",
+      "namespace": "default"
+    }
+  }
+}
+```
+
+That is fine for one operator running several personal bots on the same machine. For tenant or production separation, create per-instance namespaces and apply equivalent `SandboxTemplate` manifests into each namespace:
+
+```bash
+kubectl create namespace nanobot-telegram
+kubectl create namespace nanobot-discord
+```
+
+For example, copy or patch the manifests in `sandbox/network/` and `sandbox/workspace/` so `metadata.namespace` matches the target namespace, then apply them with `kubectl apply -f`.
+
+Then set each config to its own namespace:
+
+```json
+{
+  "tools": {
+    "web": {
+      "sandbox": {
+        "templateName": "network-sandbox-template",
+        "namespace": "nanobot-telegram"
+      }
+    },
+    "workspace": {
+      "templateName": "workspace-sandbox-template",
+      "namespace": "nanobot-telegram"
+    }
+  }
+}
+```
+
+### Common Patterns
+
+- Use one config directory per bot or tenant: `~/.nanobot-telegram/`, `~/.nanobot-discord/`, etc.
+- Use one workspace per instance when you want separate memories, sessions, bootstrap files, and skills.
+- Use separate Kubernetes namespaces when you want sandbox claims, network policies, and template objects separated at the cluster level.
+- Use different gateway ports for simultaneous gateway processes.
+- Use different channel credentials; do not point two running gateways at the same Telegram bot token or Slack app unless you understand the channel's delivery semantics.
 
 ### Notes
 
-- Each instance must use a different port if they run at the same time
-- Use a different workspace per instance if you want isolated memory, sessions, and skills
-- `--workspace` overrides the workspace defined in the config file
-- Cron jobs and runtime media/state are derived from the config directory
+- `--config` selects the instance config and therefore the runtime data directory.
+- `--workspace` overrides only the workspace path for that process.
+- Sandbox template names and namespaces come from `tools.web.sandbox` and `tools.workspace`, not from `--workspace`.
+- A running gateway must be restarted after config changes.
 
 ## 💻 CLI Reference
 
@@ -1534,9 +1594,9 @@ Interactive mode exits: `exit`, `quit`, `/exit`, `/quit`, `:q`, or `Ctrl+D`.
 <details>
 <summary><b>Heartbeat (Periodic Tasks)</b></summary>
 
-The gateway wakes up every 30 minutes and checks `HEARTBEAT.md` in your workspace (`~/.nanobot/workspace/HEARTBEAT.md`). If the file has tasks, the agent executes them and delivers results to your most recently active chat channel.
+The gateway wakes up every 30 minutes and checks `HEARTBEAT.md` in the configured workspace (default: `~/.nanobot/workspace/HEARTBEAT.md`). If the file has tasks, the agent executes them and delivers results to your most recently active chat channel.
 
-**Setup:** edit `~/.nanobot/workspace/HEARTBEAT.md` (created automatically by `nanobot onboard`):
+**Setup:** edit `HEARTBEAT.md` in the workspace for that config (created automatically by `nanobot onboard`):
 
 ```markdown
 ## Periodic Tasks
@@ -1554,7 +1614,9 @@ The agent can also manage this file itself — ask it to "add a periodic task" a
 ## 🐳 Docker
 
 > [!TIP]
-> The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your config and workspace persist across container restarts.
+> The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your default config and default workspace persist across container restarts.
+>
+> The Docker examples are for basic chat and channel operation. Sandboxed `web_fetch`, file tools, and `exec` require the isolation stack plus Kubernetes/router access from inside the container. For the least surprising hardened setup, run nanobot directly in a host venv on the machine where `scripts/isolation_dependencies_install.sh` was run.
 
 ### Docker Compose
 
@@ -1646,23 +1708,28 @@ If you edit the `.service` file itself, run `systemctl --user daemon-reload` bef
 ## 📁 Project Structure
 
 ```
-nanobot/
-├── agent/          # 🧠 Core agent logic
-│   ├── loop.py     #    Agent loop (LLM ↔ tool execution)
-│   ├── context.py  #    Prompt builder
-│   ├── memory.py   #    Persistent memory
-│   ├── skills.py   #    Skills loader
-│   ├── subagent.py #    Background task execution
-│   └── tools/      #    Built-in tools (incl. spawn)
-├── skills/         # 🎯 Bundled skills (github, weather, tmux...)
-├── channels/       # 📱 Chat channel integrations (supports plugins)
-├── bus/            # 🚌 Message routing
-├── cron/           # ⏰ Scheduled tasks
-├── heartbeat/      # 💓 Proactive wake-up
-├── providers/      # 🤖 LLM providers (OpenRouter, etc.)
-├── session/        # 💬 Conversation sessions
-├── config/         # ⚙️ Configuration
-└── cli/            # 🖥️ Commands
+.
+├── nanobot/
+│   ├── agent/          # 🧠 Core agent logic
+│   │   ├── loop.py     #    Agent loop (LLM ↔ tool execution)
+│   │   ├── context.py  #    Prompt builder
+│   │   ├── memory.py   #    Persistent memory
+│   │   ├── skills.py   #    Skills loader
+│   │   ├── subagent.py #    Background task execution
+│   │   └── tools/      #    Built-in tools (incl. spawn)
+│   ├── skills/         # 🎯 Bundled skills (github, weather, tmux...)
+│   ├── channels/       # 📱 Chat channel integrations (supports plugins)
+│   ├── bus/            # 🚌 Message routing
+│   ├── cron/           # ⏰ Scheduled tasks
+│   ├── heartbeat/      # 💓 Proactive wake-up
+│   ├── providers/      # 🤖 LLM providers (OpenRouter, etc.)
+│   ├── session/        # 💬 Conversation sessions
+│   ├── config/         # ⚙️ Configuration
+│   └── cli/            # 🖥️ Commands
+├── sandbox/            # 🧱 Kubernetes/Kata sandbox images and manifests
+├── scripts/            # 🛠️ Installation and operational helpers
+├── bridge/             # 📱 WhatsApp bridge
+└── docs/               # 📚 Additional guides
 ```
 
 ## 🤝 Contribute & Roadmap
