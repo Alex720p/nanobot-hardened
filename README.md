@@ -163,7 +163,7 @@ nanobot can run outbound page fetching, shell execution, and workspace file oper
 Use a source checkout of this repository for the hardened isolation flow. The helper script and manifests live under `scripts/` and `sandbox/`.
 
 > [!IMPORTANT]
-> The isolation setup in this branch is closer to a proof of concept than a polished production installer. Expect rough edges, environment-specific failures, missing cleanup paths, version mismatches, and operational issues. Treat it as an experimental hardening direction that you should inspect, test, and adapt before relying on it.
+> The isolation setup in this repo is closer to a proof of concept than a polished production installer. Expect rough edges, environment-specific failures, missing cleanup paths, version mismatches, and operational issues. Treat it as an experimental hardening direction that you should inspect, test, and adapt before relying on it.
 
 For a fresh Linux server, install the isolation stack from the repository root:
 
