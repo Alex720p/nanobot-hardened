@@ -76,13 +76,6 @@ wait_for_pods_ready_selector() {
 
 require_root
 
-log "Checking OS"
-. /etc/os-release
-if [ "${ID:-}" != "ubuntu" ]; then
-  echo "This script expects Ubuntu. Detected: ${ID:-unknown}" >&2
-  exit 1
-fi
-
 log "Checking KVM availability for Kata"
 if [ ! -e /dev/kvm ]; then
   echo "WARNING: /dev/kvm is missing. Kata typically requires nested virtualization or bare metal."
