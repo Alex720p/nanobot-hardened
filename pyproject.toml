@@ -25,8 +25,6 @@ dependencies = [
     "websockets>=16.0,<17.0",
     "websocket-client>=1.9.0,<2.0.0",
     "httpx>=0.28.0,<1.0.0",
-    "fastapi>=0.116.0,<1.0.0",
-    "uvicorn>=0.35.0,<1.0.0",
     "ddgs>=9.5.5,<10.0.0",
     "oauth-cli-kit>=0.1.3,<1.0.0",
     "loguru>=0.7.3,<1.0.0",
@@ -90,7 +88,7 @@ include = [
     "nanobot/templates/**/*.md",
     "nanobot/skills/**/*.md",
     "nanobot/skills/**/*.sh",
-    "sandboxing/networking/web_fetch.py",
+    "sandbox/network/web_fetch.py",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -101,12 +99,12 @@ packages = ["nanobot"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "bridge" = "nanobot/bridge"
-"sandboxing/networking/web_fetch.py" = "nanobot/sandboxing/networking/web_fetch.py"
+"sandbox/network/web_fetch.py" = "nanobot/sandbox/network/web_fetch.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "nanobot/",
-    "sandboxing/networking/web_fetch.py",
+    "sandbox/network/web_fetch.py",
     "bridge/",
     "README.md",
     "LICENSE",
