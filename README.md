@@ -99,6 +99,7 @@
 - [Chat Apps](#-chat-apps)
 - [Agent Social Network](#-agent-social-network)
 - [Configuration](#️-configuration)
+- [Isolation Sandbox](#-isolation-sandbox)
 - [Multiple Instances](#-multiple-instances)
 - [CLI Reference](#-cli-reference)
 - [Docker](#-docker)
@@ -137,6 +138,9 @@
 ```bash
 git clone https://github.com/HKUDS/nanobot.git
 cd nanobot
+
+python3 -m venv venv
+source venv/bin/activate
 pip install -e .
 ```
 
@@ -151,6 +155,29 @@ uv tool install nanobot-ai
 ```bash
 pip install nanobot-ai
 ```
+
+### Install isolation dependencies
+
+nanobot can run outbound page fetching, shell execution, and workspace file operations inside isolated Kubernetes sandboxes. This is required for hardened `web_fetch`, `exec`, and file tools.
+
+For a fresh Linux server, install the isolation stack from the repository root:
+
+```bash
+sudo bash scripts/isolation_dependencies_install.sh
+```
+
+If you installed `nanobot-ai` from PyPI, clone the repository as well so you have the `scripts/` and `sandbox/` manifests available.
+
+> [!WARNING]
+> The isolation installation script is provided as a best-effort helper and comes without any guarantees. Read it before running it. It installs and reconfigures system-level components including Kubernetes, containerd, Docker, Calico, Helm, Kata Containers, and Agent Sandbox. Run it on a disposable or dedicated VM, keep backups, and expect to adapt it for your distribution, cloud provider, and kernel.
+
+The script expects:
+
+- Linux with `systemd`, `apt`, and root access
+- `/dev/kvm` available for Kata-backed isolation
+- A host where it is acceptable to install or reset local Kubernetes components
+
+After the script finishes, configure the sandbox template names in `~/.nanobot/config.json` as shown in [Isolation Sandbox](#-isolation-sandbox).
 
 ### Update to latest version
 
@@ -183,7 +210,7 @@ nanobot channels login
 >
 > For other LLM providers, please see the [Providers](#providers) section.
 >
-> For web search capability setup, please see [Web Search](#web-search).
+> For web search and page fetching setup, please see [Web Search](#web-search) and [Isolation Sandbox](#-isolation-sandbox).
 
 **1. Initialize**
 
@@ -195,7 +222,7 @@ Use `nanobot onboard --wizard` if you want the interactive setup wizard.
 
 **2. Configure** (`~/.nanobot/config.json`)
 
-Configure these **two parts** in your config (other options have defaults).
+Configure your provider and model first. If you want `web_fetch`, `exec`, or workspace-backed file tools, also add the isolated tool templates.
 
 *Set your API key* (e.g. OpenRouter, recommended for global users):
 ```json
@@ -219,6 +246,33 @@ Configure these **two parts** in your config (other options have defaults).
   }
 }
 ```
+
+*Enable isolated tools* (required for `web_fetch`, shell execution, and workspace-backed file tools):
+```json
+{
+  "tools": {
+    "web": {
+      "sandbox": {
+        "templateName": "network-sandbox-template",
+        "namespace": "default",
+        "runTimeout": 60
+      }
+    },
+    "workspace": {
+      "templateName": "workspace-sandbox-template",
+      "namespace": "default",
+      "gatewayName": null,
+      "gatewayNamespace": "default",
+      "apiUrl": null,
+      "serverPort": 8888,
+      "requestTimeout": 60
+    }
+  }
+}
+```
+
+> [!TIP]
+> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and fill in the template names above.
 
 **3. Chat**
 
@@ -1196,7 +1250,7 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 ### Security
 
 > [!TIP]
-> For production deployments, set `"restrictToWorkspace": true` in your config to sandbox the agent.
+> For production deployments, set `"restrictToWorkspace": true` in your config to constrain built-in tools to the configured workspace path.
 > In `v0.1.4.post3` and earlier, an empty `allowFrom` allowed all senders. Since `v0.1.4.post4`, empty `allowFrom` denies all access by default. To allow all senders, set `"allowFrom": ["*"]`.
 
 | Option | Default | Description |
@@ -1205,6 +1259,137 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 | `tools.exec.enable` | `true` | When `false`, the shell `exec` tool is not registered at all. Use this to completely disable shell command execution. |
 | `tools.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
 | `channels.*.allowFrom` | `[]` (deny all) | Whitelist of user IDs. Empty denies all; use `["*"]` to allow everyone. |
+
+
+## 🧱 Isolation Sandbox
+
+nanobot's hardened runtime separates agent decisions from risky tool execution. Normal LLM calls still happen in the nanobot process, but tools that touch the network, shell, or workspace can be routed through isolated Kubernetes sandboxes.
+
+
+| Tool path | Sandbox | Lifetime | Purpose |
+|-----------|---------|----------|---------|
+| `web_search` | Usually none | Request scoped | Search API calls such as Brave, Tavily, Jina, SearXNG, or DuckDuckGo |
+| `web_fetch` | `network-sandbox-template` | Request scoped | Fetch and extract page content from public HTTP/HTTPS URLs |
+| File tools | `workspace-sandbox-template` | Long-lived per agent process | Read, write, list, and edit workspace files without mounting the host workspace directly |
+| `exec` | `workspace-sandbox-template` | Long-lived per agent process | Run shell commands inside the workspace sandbox |
+
+### Architecture
+
+The isolation stack is built from three layers:
+
+| Layer | Role |
+|-------|------|
+| **Kubernetes** | Schedules sandbox pods, applies network policy, and owns the Sandbox custom resources |
+| **Kata Containers** | Runs sandbox pods through a VM-backed runtime class (`kata-qemu`) instead of ordinary shared-kernel containers |
+| **Agent Sandbox** | Provides `SandboxTemplate`, `SandboxClaim`, and `Sandbox` resources plus a Python SDK used by nanobot to create and talk to sandboxes |
+
+The repository includes two default templates:
+
+| Template | Manifest | Default image | Notes |
+|----------|----------|---------------|-------|
+| `network-sandbox-template` | `sandbox/network/network_k8s_manifest.yaml` | `alex720p/python-network-sandbox:latest` | DNS plus outbound TCP `80/443`; private, link-local, and cluster ranges are excluded by network policy |
+| `workspace-sandbox-template` | `sandbox/workspace/workspace_k8s_manifest.yaml` | `alex720p/debian-workspace-sandbox:latest` | Debian-based environment for workspace file operations and shell commands |
+
+### Install the Isolation Stack
+
+From the repository root:
+
+```bash
+sudo bash scripts/isolation_dependencies_install.sh
+```
+
+If you installed `nanobot-ai` from PyPI, clone the repository as well so you have the `scripts/` and `sandbox/` manifests available.
+
+The script installs and configures the local Kubernetes stack, Calico networking, Kata, Agent Sandbox, the sandbox router, and the two default `SandboxTemplate` objects.
+
+> [!WARNING]
+> This script comes without any guarantees. It is intended as a practical bootstrap helper for dedicated Linux machines, not as a universal installer. It can install packages, reset local Kubernetes state, change container runtime configuration, and apply cluster manifests. Inspect it first and prefer a fresh VM.
+
+Before running it, confirm that the host has KVM:
+
+```bash
+test -e /dev/kvm && echo "KVM available"
+```
+
+After it completes, verify the cluster pieces:
+
+```bash
+kubectl get runtimeclass kata-qemu
+kubectl get pods -A
+kubectl get sandboxtemplates -A
+```
+
+You should see `network-sandbox-template` and `workspace-sandbox-template` in the `default` namespace.
+
+### Configure nanobot
+
+Add the sandbox template names to your active config file, usually `~/.nanobot/config.json`:
+
+```json
+{
+  "tools": {
+    "web": {
+      "sandbox": {
+        "templateName": "network-sandbox-template",
+        "namespace": "default",
+        "runTimeout": 60
+      }
+    },
+    "workspace": {
+      "templateName": "workspace-sandbox-template",
+      "namespace": "default",
+      "gatewayName": null,
+      "gatewayNamespace": "default",
+      "apiUrl": null,
+      "serverPort": 8888,
+      "requestTimeout": 60
+    }
+  }
+}
+```
+
+These values match the manifests shipped in this repository and should work out of the box after `scripts/isolation_dependencies_install.sh` completes successfully.
+
+| Config field | Default value to use | Description |
+|--------------|----------------------|-------------|
+| `tools.web.sandbox.templateName` | `"network-sandbox-template"` | Template used by `web_fetch` |
+| `tools.web.sandbox.namespace` | `"default"` | Namespace containing the network sandbox template |
+| `tools.web.sandbox.runTimeout` | `60` | Timeout for the sandbox fetch runner |
+| `tools.workspace.templateName` | `"workspace-sandbox-template"` | Template used by file tools and `exec` |
+| `tools.workspace.namespace` | `"default"` | Namespace containing the workspace sandbox template |
+| `tools.workspace.gatewayName` | `null` | Leave unset for local tunnel mode |
+| `tools.workspace.gatewayNamespace` | `"default"` | Gateway namespace if gateway mode is used |
+| `tools.workspace.apiUrl` | `null` | Leave unset unless connecting to a custom sandbox router URL |
+| `tools.workspace.serverPort` | `8888` | Port exposed by the sandbox runtime container |
+| `tools.workspace.requestTimeout` | `60` | Timeout for workspace file and command requests |
+
+Restart `nanobot gateway` after changing the config. A running process will not pick up the new template names until it restarts.
+
+### Troubleshooting
+
+If `web_fetch` returns:
+
+```json
+{"error": "Sandbox web_fetch is required but not configured. Set tools.web.sandbox.templateName in config.json."}
+```
+
+then the config file loaded by the current `nanobot` process does not contain `tools.web.sandbox.templateName`, or the gateway was not restarted after editing it.
+
+If you see:
+
+```text
+SandboxClient.__init__() got an unexpected keyword argument 'template_name'
+```
+
+your active Python environment is using a newer `k8s-agent-sandbox` SDK than this branch expects. Reinstall from the repository constraints and verify the version:
+
+```bash
+source venv/bin/activate
+pip install -e . --upgrade
+pip show k8s-agent-sandbox
+```
+
+The current branch pins `k8s-agent-sandbox==0.2.1`.
 
 
 ## 🧩 Multiple Instances
