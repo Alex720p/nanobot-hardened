@@ -9,8 +9,8 @@ spec:
       runtimeClassName: kata-qemu     
       containers:
       - name: agent-debian-workspace
-        image: debian-workspace-sandbox:local
-        imagePullPolicy: Never
+        image: alex720p/debian-workspace-sandbox:latest
+        imagePullPolicy: 
         ports:
         - containerPort: 8888
         readinessProbe:

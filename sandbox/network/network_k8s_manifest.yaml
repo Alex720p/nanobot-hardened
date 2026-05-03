@@ -16,8 +16,8 @@ spec:
         - .
       containers:
       - name: python-runtime
-        image: python-network-sandbox:local
-        imagePullPolicy: Never
+        image: alex720p/python-network-sandbox:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8888
         readinessProbe:
