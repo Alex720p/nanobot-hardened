@@ -205,7 +205,7 @@ sed \
 wait_for_pods_ready_selector "default" "app=sandbox-router"
 
 cd "${PROJECT_ROOT}"
-kubectl apply -f network_k8s_manifest.yaml
-kubectl apply -f workspace_k8s_manifest.yaml
+kubectl apply -f sandbox/network/network_k8s_manifest.yaml
+kubectl apply -f sandbox/workspace/workspace_k8s_manifest.yaml
 
 echo "Installation complete."
