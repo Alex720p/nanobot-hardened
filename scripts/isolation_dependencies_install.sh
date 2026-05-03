@@ -5,7 +5,7 @@ K8S_MINOR="v1.35"
 POD_CIDR="192.168.0.0/16"
 CALICO_VERSION="v3.31.4"
 AGENT_SANDBOX_VERSION="v0.2.1"
-ROUTER_PINNED_IMAGE="us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router@sha256:ec8955779c61063d9ec3467bee03e353a376547f9eac99bddb94854d551a8c5e"
+ROUTER_IMAGE='us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router@sha256:ec8955779c61063d9ec3467bee03e353a376547f9eac99bddb94854d551a8c5e'
 NETWORK_SANDBOX_LOCAL_IMAGE="python-network-sandbox:local"
 WORKSPACE_SANDBOX_LOCAL_IMAGE="debian-workspace-sandbox:local"
 WORKDIR="/root/agent-sandbox"
@@ -78,8 +78,8 @@ require_root
 
 log "Checking KVM availability for Kata"
 if [ ! -e /dev/kvm ]; then
-  echo "WARNING: /dev/kvm is missing. Kata typically requires nested virtualization or bare metal."
-  echo "Install will continue, but Kata workloads may fail later."
+  echo "WARNING: /dev/kvm is missing. Kata requires nested virtualization or bare metal." >&2
+  exit 1
 fi
 
 log "Installing base packages"
@@ -198,12 +198,11 @@ git clone --branch v0.2.1 https://github.com/kubernetes-sigs/agent-sandbox.git "
 log "Setting up sandbox-router"
 cd "${WORKDIR}/clients/python/agentic-sandbox-client/sandbox-router"
 sed \
-  -e 's|image: ${ROUTER_IMAGE}|image: us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router@sha256:ec8955779c61063d9ec3467bee03e353a376547f9eac99bddb94854d551a8c5e|' \
-  -e 's|# imagePullPolicy: Never|imagePullPolicy: Never|' \
+  -e "s|image: \${ROUTER_IMAGE}|image: ${ROUTER_IMAGE}|" \
+  -e "s|image: IMAGE_PLACEHOLDER|image: ${ROUTER_IMAGE}|" \
   sandbox_router.yaml | kubectl apply -f -
 
 wait_for_pods_ready_selector "default" "app=sandbox-router"
-
 
 kubectl apply -f network_k8s_manifest.yaml
 kubectl apply -f workspace_k8s_manifest.yaml
