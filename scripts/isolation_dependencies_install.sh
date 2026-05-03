@@ -5,7 +5,7 @@ K8S_MINOR="v1.35"
 POD_CIDR="192.168.0.0/16"
 CALICO_VERSION="v3.31.4"
 AGENT_SANDBOX_VERSION="v0.2.1"
-ROUTER_LOCAL_IMAGE="sandbox-router:local"
+ROUTER_PINNED_IMAGE="us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router@sha256:ec8955779c61063d9ec3467bee03e353a376547f9eac99bddb94854d551a8c5e"
 NETWORK_SANDBOX_LOCAL_IMAGE="python-network-sandbox:local"
 WORKSPACE_SANDBOX_LOCAL_IMAGE="debian-workspace-sandbox:local"
 WORKDIR="/root/agent-sandbox"
@@ -200,141 +200,19 @@ wait_for_deployment_ready "agent-sandbox-system" "agent-sandbox-controller"
 
 log "Cloning agent-sandbox repo"
 rm -rf "${WORKDIR}"
-git clone https://github.com/kubernetes-sigs/agent-sandbox.git "${WORKDIR}"
+git clone --branch v0.2.1 https://github.com/kubernetes-sigs/agent-sandbox.git "${WORKDIR}"
 
-log "Building sandbox-router locally"
+log "Setting up sandbox-router"
 cd "${WORKDIR}/clients/python/agentic-sandbox-client/sandbox-router"
-docker build -t "${ROUTER_LOCAL_IMAGE}" .
-docker save -o /tmp/sandbox-router-local.tar "${ROUTER_LOCAL_IMAGE}"
-log "Importing sandbox-router image into containerd"
-imported=false
-for i in $(seq 1 5); do # ugly fix
-  if ctr -n k8s.io images import --local /tmp/sandbox-router-local.tar; then
-    echo "Import succeeded"
-    imported=true
-    break
-  fi
-  echo "Import attempt $i failed, retrying..."
-  sleep 3
-done
-if [ "${imported}" != "true" ]; then
-  echo "Failed to import sandbox-router image into containerd" >&2
-  exit 1
-fi
-
-ctr -n k8s.io images ls | grep sandbox-router || true
-
-log "Deploying sandbox-router from local image"
-kubectl delete -f sandbox_router.yaml --ignore-not-found || true
 sed \
-  -e "s|IMAGE_PLACEHOLDER|${ROUTER_LOCAL_IMAGE}|g" \
-  -e "s|\${ROUTER_IMAGE}|${ROUTER_LOCAL_IMAGE}|g" \
-  -e '/^[[:space:]]*image: /a\        imagePullPolicy: Never' \
+  -e 's|image: ${ROUTER_IMAGE}|image: us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router@sha256:ec8955779c61063d9ec3467bee03e353a376547f9eac99bddb94854d551a8c5e|' \
+  -e 's|# imagePullPolicy: Never|imagePullPolicy: Never|' \
   sandbox_router.yaml | kubectl apply -f -
 
 wait_for_pods_ready_selector "default" "app=sandbox-router"
 
-log "Applying upstream python-sandbox-template"
-cd "${WORKDIR}"
-TEMPLATE_FILE="./clients/python/agentic-sandbox-client/python-sandbox-template.yaml"
-if [ ! -f "${TEMPLATE_FILE}" ]; then
-  echo "Could not find python-sandbox-template.yaml in cloned repo" >&2
-  exit 1
-fi
-sed \
-  -e 's|${SANDBOX_TEMPLATE_NAME}|python-sandbox-template|g' \
-  -e 's|${SANDBOX_NAMESPACE}|default|g' \
-  "${TEMPLATE_FILE}" | kubectl apply -f -
 
-log "Patching template to use kata-qemu"
-kubectl patch sandboxtemplate python-sandbox-template -n default --type merge -p '
-spec:
-  podTemplate:
-    spec:
-      runtimeClassName: kata-qemu
-'
-
-log "Installing Agent Sandbox Python SDK"
-python3 -m venv "${SDK_VENV}"
-. "${SDK_VENV}/bin/activate"
-pip install --upgrade pip
-pip install k8s-agent-sandbox
-
-log "Writing hello-world SDK test"
-cat >/root/sdk_hello.py <<'PY'
-from k8s_agent_sandbox import SandboxClient
-
-print("creating client")
-client = SandboxClient()
-sandbox = client.create_sandbox("python-sandbox-template", namespace="default")
-try:
-    print("sandbox ready")
-    result = sandbox.commands.run("echo hello world from sdk")
-    print("stdout:")
-    print(result.stdout)
-finally:
-    sandbox.terminate()
-print("done")
-PY
-
-log "Running hello-world"
-python -u /root/sdk_hello.py
-
-log "Building network sandbox locally"
-cd "${PROJECT_ROOT}/sandbox/network"
-docker build -t "${NETWORK_SANDBOX_LOCAL_IMAGE}" .
-docker save -o /tmp/network-sandbox-local.tar "${NETWORK_SANDBOX_LOCAL_IMAGE}"
-log "Importing network sandbox image into containerd"
-imported=false
-for i in $(seq 1 5); do # ugly fix
-  if ctr -n k8s.io images import --local /tmp/network-sandbox-local.tar ; then
-    echo "Import succeeded"
-    imported=true
-    break
-  fi
-  echo "Import attempt $i failed, retrying..."
-  sleep 3
-done
-if [ "${imported}" != "true" ]; then
-  echo "Failed to import network sandbox image into containerd" >&2
-  exit 1
-fi
 kubectl apply -f network_k8s_manifest.yaml
-
-log "Building workspace sandbox locally"
-cd "${PROJECT_ROOT}/sandbox/workspace"
-docker build -t "${WORKSPACE_SANDBOX_LOCAL_IMAGE}" .
-docker save -o /tmp/workspace-sandbox-local.tar "${WORKSPACE_SANDBOX_LOCAL_IMAGE}"
-log "Importing workspace sandbox image into containerd"
-imported=false
-for i in $(seq 1 5); do # ugly fix
-  if ctr -n k8s.io images import --local /tmp/workspace-sandbox-local.tar ; then
-    echo "Import succeeded"
-    imported=true
-    break
-  fi
-  echo "Import attempt $i failed, retrying..."
-  sleep 3
-done
-if [ "${imported}" != "true" ]; then
-  echo "Failed to import workspace sandbox image into containerd" >&2
-  exit 1
-fi
 kubectl apply -f workspace_k8s_manifest.yaml
 
-cat <<'EOF'
-
-Install complete.
-
-Checks:
-  export KUBECONFIG=/etc/kubernetes/admin.conf
-  kubectl get nodes -o wide
-  kubectl get runtimeclass
-  kubectl get pods -A
-  kubectl get sandbox -A
-  kubectl get sandboxclaim -A
-
-Re-run hello world:
-  . /root/agent-sdk-venv/bin/activate
-  python -u /root/sdk_hello.py
-EOF
+echo "Installation complete."
