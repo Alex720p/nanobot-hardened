@@ -227,7 +227,10 @@ Use `nanobot onboard --wizard` if you want the interactive setup wizard.
 
 **2. Configure** (`~/.nanobot/config.json`)
 
-Configure your provider and model first. If you want `web_fetch`, `exec`, or workspace-backed file tools, also add the isolated tool templates.
+Configure your provider and model first. If you want the agent to have the default sandbox-backed tool capabilities (`web_fetch`, `exec`, and workspace-backed file tools), also add the isolated tool templates.
+
+> [!IMPORTANT]
+> If your config shows `"templateName": ""`, replace the empty string with the real template name. Leaving `templateName` blank disables that sandbox-backed capability. Use `"network-sandbox-template"` for `tools.web.sandbox.templateName` and `"workspace-sandbox-template"` for `tools.workspace.templateName`.
 
 *Set your API key* (e.g. OpenRouter, recommended for global users):
 ```json
@@ -251,6 +254,9 @@ Configure your provider and model first. If you want `web_fetch`, `exec`, or wor
   }
 }
 ```
+
+> [!IMPORTANT]
+> Do not add `agents.defaults.workspace` to new configs. The legacy host workspace setting formerly shown as `"workspace": "~/.nanobot/workspace"` is deprecated. For agent file and shell capabilities, use the sandboxed workspace configured under `tools.workspace`; that is the default workspace mode for the hardened runtime.
 
 *Enable isolated tools* (required for `web_fetch`, shell execution, and workspace-backed file tools):
 ```json
@@ -277,7 +283,7 @@ Configure your provider and model first. If you want `web_fetch`, `exec`, or wor
 ```
 
 > [!TIP]
-> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and fill in the template names above.
+> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and fill in both `templateName` values above. Empty strings such as `"templateName": ""` mean the agent will not have those default tool capabilities.
 
 **3. Chat**
 
@@ -833,6 +839,22 @@ Simply send the command above to your nanobot (via CLI or any chat channel), and
 
 Config file: `~/.nanobot/config.json`
 
+### Workspace
+
+Use the sandboxed workspace for agent tool execution. The legacy host workspace setting is deprecated:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nanobot/workspace"
+    }
+  }
+}
+```
+
+Do not add that block to new configs. Built-in file tools and `exec` should use the sandboxed workspace under `tools.workspace`, with `tools.workspace.templateName` set to `"workspace-sandbox-template"`.
+
 ### Providers
 
 > [!TIP]
@@ -892,11 +914,8 @@ nanobot provider login openai-codex
 ```bash
 nanobot agent -m "Hello!"
 
-# Target a specific workspace/config locally
+# Target a specific config locally
 nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello!"
-
-# One-off workspace override on top of that config
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test -m "Hello!"
 ```
 
 > Docker users: use `docker run -it` for interactive OAuth login.
@@ -930,11 +949,8 @@ nanobot provider login github-copilot
 ```bash
 nanobot agent -m "Hello!"
 
-# Target a specific workspace/config locally
+# Target a specific config locally
 nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello!"
-
-# One-off workspace override on top of that config
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test -m "Hello!"
 ```
 
 > Docker users: use `docker run -it` for interactive OAuth login.
@@ -1330,6 +1346,9 @@ You should see `network-sandbox-template` and `workspace-sandbox-template` in th
 
 Add the sandbox template names to your active config file, usually `~/.nanobot/config.json`:
 
+> [!IMPORTANT]
+> The `templateName` values are required for the agent's default sandbox-backed capabilities. If your config contains `"templateName": ""`, replace the empty string with the matching template name shown below. A blank `templateName` means nanobot cannot create the sandbox for that tool, so `web_fetch`, `exec`, and workspace-backed file tools will be unavailable.
+
 ```json
 {
   "tools": {
@@ -1357,10 +1376,10 @@ These values match the manifests shipped in this repository and should work out 
 
 | Config field | Default value to use | Description |
 |--------------|----------------------|-------------|
-| `tools.web.sandbox.templateName` | `"network-sandbox-template"` | Template used by `web_fetch` |
+| `tools.web.sandbox.templateName` | `"network-sandbox-template"` | Required template for `web_fetch`; do not leave blank |
 | `tools.web.sandbox.namespace` | `"default"` | Namespace containing the network sandbox template |
 | `tools.web.sandbox.runTimeout` | `60` | Timeout for the sandbox fetch runner |
-| `tools.workspace.templateName` | `"workspace-sandbox-template"` | Template used by file tools and `exec` |
+| `tools.workspace.templateName` | `"workspace-sandbox-template"` | Required template for file tools and `exec`; do not leave blank |
 | `tools.workspace.namespace` | `"default"` | Namespace containing the workspace sandbox template |
 | `tools.workspace.gatewayName` | `null` | Leave unset for local tunnel mode |
 | `tools.workspace.gatewayNamespace` | `"default"` | Gateway namespace if gateway mode is used |
@@ -1401,9 +1420,12 @@ The current branch pins `k8s-agent-sandbox==0.2.1`.
 
 Run multiple nanobot gateways or CLI agents from the same installation by giving each one its own config file. In the hardened runtime, there are two layers to think about:
 
+> [!IMPORTANT]
+> `agents.defaults.workspace` (for example `"workspace": "~/.nanobot/workspace"`) and `--workspace` are deprecated host-workspace controls. Do not use them for new configs. The only workspace to configure for agent file and shell capabilities is the sandboxed workspace under `tools.workspace`; use `"workspace-sandbox-template"` for the default hardened setup.
+
 | Layer | Controlled by | What it isolates |
 |-------|---------------|------------------|
-| **nanobot instance data** | `--config`, `agents.defaults.workspace`, `gateway.port`, channel credentials | Sessions, memory files, skills, Cron jobs, media/runtime state, enabled channels, model/provider choices |
+| **nanobot instance data** | `--config`, `gateway.port`, channel credentials | Sessions, memory files, skills, Cron jobs, media/runtime state, enabled channels, model/provider choices |
 | **Kubernetes sandbox execution** | `tools.web.sandbox.*` and `tools.workspace.*` | Which Agent Sandbox templates and namespaces are used for `web_fetch`, file tools, and `exec` |
 
 The default sandbox templates can be shared by many nanobot instances. Each running gateway or CLI agent creates its own sandbox claims from those templates. If you need stronger tenant separation, create per-instance Kubernetes namespaces and point each config at templates in that namespace.
@@ -1411,10 +1433,10 @@ The default sandbox templates can be shared by many nanobot instances. Each runn
 ### Recommended Setup
 
 ```bash
-# Create separate instance configs and host workspaces
-nanobot onboard --config ~/.nanobot-telegram/config.json --workspace ~/.nanobot-telegram/workspace
-nanobot onboard --config ~/.nanobot-discord/config.json --workspace ~/.nanobot-discord/workspace
-nanobot onboard --config ~/.nanobot-feishu/config.json --workspace ~/.nanobot-feishu/workspace
+# Create separate instance configs
+nanobot onboard --config ~/.nanobot-telegram/config.json
+nanobot onboard --config ~/.nanobot-discord/config.json
+nanobot onboard --config ~/.nanobot-feishu/config.json
 ```
 
 Then edit each config with its own channel credentials, model/provider settings, gateway port, and sandbox template settings.
@@ -1425,7 +1447,6 @@ Example `~/.nanobot-telegram/config.json` excerpt:
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.nanobot-telegram/workspace",
       "model": "anthropic/claude-sonnet-4-6"
     }
   },
@@ -1471,29 +1492,18 @@ Each gateway should use a different `gateway.port` if it exposes the HTTP gatewa
 
 ### Path and State Resolution
 
-When `--config` is set, nanobot uses that config file as the instance root for runtime state. The workspace still comes from `agents.defaults.workspace` unless you pass `--workspace`.
+When `--config` is set, nanobot uses that config file as the instance root for runtime state. Tool execution comes from the sandbox settings under `tools.web.sandbox` and `tools.workspace`.
 
 | Component | Resolved from | Example |
 |-----------|---------------|---------|
 | **Config** | `--config` path | `~/.nanobot-telegram/config.json` |
 | **Runtime data directory** | Parent directory of the config file | `~/.nanobot-telegram/` |
-| **Logical workspace root** | `--workspace` or `agents.defaults.workspace` | `~/.nanobot-telegram/workspace/` |
-| **Sessions** | Workspace | `~/.nanobot-telegram/workspace/sessions/` |
-| **Memory and skills** | Workspace | `~/.nanobot-telegram/workspace/memory/`, `~/.nanobot-telegram/workspace/skills/` |
 | **Cron jobs** | Config directory | `~/.nanobot-telegram/cron/jobs.json` |
 | **Media/runtime state** | Config directory | `~/.nanobot-telegram/media/` |
 | **Web sandbox template** | `tools.web.sandbox` | `network-sandbox-template` in namespace `default` |
 | **Workspace sandbox template** | `tools.workspace` | `workspace-sandbox-template` in namespace `default` |
 
-The logical workspace path is still used for prompts, memory, sessions, skills, and path validation. Sandbox-backed file tools and `exec` run inside the workspace sandbox created by the current process, so `--workspace` does not by itself change the Kubernetes namespace or sandbox template.
-
-`--workspace` is useful for one-off tests:
-
-```bash
-nanobot gateway --config ~/.nanobot-telegram/config.json --workspace /tmp/nanobot-telegram-test
-```
-
-It changes the nanobot workspace path for that run, but it does not change the Kubernetes sandbox template or namespace. To move tool execution to a different sandbox namespace, edit `tools.web.sandbox.namespace` and `tools.workspace.namespace`.
+The old logical workspace path (`agents.defaults.workspace` or `--workspace`) is a legacy compatibility setting. It does not change the Kubernetes sandbox template, namespace, or sandboxed workspace used by built-in file tools and `exec`. To move tool execution to a different sandbox namespace, edit `tools.web.sandbox.namespace` and `tools.workspace.namespace`.
 
 ### CLI Sessions
 
@@ -1558,7 +1568,7 @@ Then set each config to its own namespace:
 ### Common Patterns
 
 - Use one config directory per bot or tenant: `~/.nanobot-telegram/`, `~/.nanobot-discord/`, etc.
-- Use one workspace per instance when you want separate memories, sessions, bootstrap files, and skills.
+- Use the sandboxed workspace configured by `tools.workspace` for file tools and shell execution.
 - Use separate Kubernetes namespaces when you want sandbox claims, network policies, and template objects separated at the cluster level.
 - Use different gateway ports for simultaneous gateway processes.
 - Use different channel credentials; do not point two running gateways at the same Telegram bot token or Slack app unless you understand the channel's delivery semantics.
@@ -1566,20 +1576,24 @@ Then set each config to its own namespace:
 ### Notes
 
 - `--config` selects the instance config and therefore the runtime data directory.
-- `--workspace` overrides only the workspace path for that process.
+- `--workspace` is deprecated and only exists for legacy host-workspace compatibility.
 - Sandbox template names and namespaces come from `tools.web.sandbox` and `tools.workspace`, not from `--workspace`.
 - A running gateway must be restarted after config changes.
 
 ## 💻 CLI Reference
 
+> [!WARNING]
+> `--workspace` / `-w` is a deprecated legacy host-workspace override. New setups should use the default sandboxed workspace configured by `tools.workspace`.
+
 | Command | Description |
 |---------|-------------|
-| `nanobot onboard` | Initialize config & workspace at `~/.nanobot/` |
+| `nanobot onboard` | Initialize config at `~/.nanobot/` |
 | `nanobot onboard --wizard` | Launch the interactive onboarding wizard |
-| `nanobot onboard -c <config> -w <workspace>` | Initialize or refresh a specific instance config and workspace |
+| `nanobot onboard -c <config>` | Initialize or refresh a specific instance config |
+| `nanobot onboard -c <config> -w <workspace>` | Deprecated legacy host-workspace override |
 | `nanobot agent -m "..."` | Chat with the agent |
-| `nanobot agent -w <workspace>` | Chat against a specific workspace |
-| `nanobot agent -w <workspace> -c <config>` | Chat against a specific workspace/config |
+| `nanobot agent -w <workspace>` | Deprecated legacy host-workspace override |
+| `nanobot agent -w <workspace> -c <config>` | Deprecated legacy host-workspace override with a specific config |
 | `nanobot agent` | Interactive chat mode |
 | `nanobot agent --no-markdown` | Show plain-text replies |
 | `nanobot agent --logs` | Show runtime logs during chat |
@@ -1594,9 +1608,9 @@ Interactive mode exits: `exit`, `quit`, `/exit`, `/quit`, `:q`, or `Ctrl+D`.
 <details>
 <summary><b>Heartbeat (Periodic Tasks)</b></summary>
 
-The gateway wakes up every 30 minutes and checks `HEARTBEAT.md` in the configured workspace (default: `~/.nanobot/workspace/HEARTBEAT.md`). If the file has tasks, the agent executes them and delivers results to your most recently active chat channel.
+The gateway wakes up every 30 minutes and checks `HEARTBEAT.md` in nanobot's runtime files (legacy default path: `~/.nanobot/workspace/HEARTBEAT.md`). This is runtime state, not the sandboxed workspace used by built-in file tools and `exec`. If the file has tasks, the agent executes them and delivers results to your most recently active chat channel.
 
-**Setup:** edit `HEARTBEAT.md` in the workspace for that config (created automatically by `nanobot onboard`):
+**Setup:** edit `HEARTBEAT.md` in the runtime files for that config (created automatically by `nanobot onboard`):
 
 ```markdown
 ## Periodic Tasks
@@ -1614,7 +1628,7 @@ The agent can also manage this file itself — ask it to "add a periodic task" a
 ## 🐳 Docker
 
 > [!TIP]
-> The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your default config and default workspace persist across container restarts.
+> The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your default config and runtime files persist across container restarts.
 >
 > The Docker examples are for basic chat and channel operation. Sandboxed `web_fetch`, file tools, and `exec` require the isolation stack plus Kubernetes/router access from inside the container. For the least surprising hardened setup, run nanobot directly in a host venv on the machine where `scripts/isolation_dependencies_install.sh` was run.
 
