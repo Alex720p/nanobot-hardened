@@ -154,8 +154,8 @@ def sandboxed_manager(monkeypatch, tmp_path):
     )
 
 
-def test_workspace_sandbox_requires_explicit_template_name(tmp_path):
-    manager = WorkspaceSandboxManager(tmp_path, WorkspaceSandboxConfig())
+def test_workspace_sandbox_rejects_blank_template_name(tmp_path):
+    manager = WorkspaceSandboxManager(tmp_path, WorkspaceSandboxConfig(template_name=""))
 
     with pytest.raises(RuntimeError, match="Workspace sandbox is required but not configured"):
         manager.exists(tmp_path / "file.txt")

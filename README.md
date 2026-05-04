@@ -227,10 +227,10 @@ Use `nanobot onboard --wizard` if you want the interactive setup wizard.
 
 **2. Configure** (`~/.nanobot/config.json`)
 
-Configure your provider and model first. If you want the agent to have the default sandbox-backed tool capabilities (`web_fetch`, `exec`, and workspace-backed file tools), also add the isolated tool templates.
+Configure your provider and model first. If you want the agent to have the default sandbox-backed tool capabilities (`web_fetch`, `exec`, and workspace-backed file tools), install the isolation stack. New configs default to the template names shipped in this repository.
 
 > [!IMPORTANT]
-> If your config shows `"templateName": ""`, replace the empty string with the real template name. Leaving `templateName` blank disables that sandbox-backed capability. Use `"network-sandbox-template"` for `tools.web.sandbox.templateName` and `"workspace-sandbox-template"` for `tools.workspace.templateName`.
+> The built-in defaults are `"network-sandbox-template"` for `tools.web.sandbox.templateName` and `"workspace-sandbox-template"` for `tools.workspace.templateName`. You can change these values if your deployed `SandboxTemplate` objects use different names or namespaces. If an older config shows `"templateName": ""`, replace the empty string because blank values disable that sandbox-backed capability.
 
 *Set your API key* (e.g. OpenRouter, recommended for global users):
 ```json
@@ -258,7 +258,7 @@ Configure your provider and model first. If you want the agent to have the defau
 > [!IMPORTANT]
 > Do not add `agents.defaults.workspace` to new configs. The legacy host workspace setting formerly shown as `"workspace": "~/.nanobot/workspace"` is deprecated. For agent file and shell capabilities, use the sandboxed workspace configured under `tools.workspace`; that is the default workspace mode for the hardened runtime.
 
-*Enable isolated tools* (required for `web_fetch`, shell execution, and workspace-backed file tools):
+*Sandbox template defaults* (required for `web_fetch`, shell execution, and workspace-backed file tools; change only if your deployed templates use different names or namespaces):
 ```json
 {
   "tools": {
@@ -283,7 +283,7 @@ Configure your provider and model first. If you want the agent to have the defau
 ```
 
 > [!TIP]
-> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and fill in both `templateName` values above. Empty strings such as `"templateName": ""` mean the agent will not have those default tool capabilities.
+> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and keep the default `templateName` values above, or change them to match your own sandbox templates. Empty strings such as `"templateName": ""` mean the agent will not have those default tool capabilities.
 
 **3. Chat**
 
@@ -853,7 +853,7 @@ Use the sandboxed workspace for agent tool execution. The legacy host workspace 
 }
 ```
 
-Do not add that block to new configs. Built-in file tools and `exec` should use the sandboxed workspace under `tools.workspace`, with `tools.workspace.templateName` set to `"workspace-sandbox-template"`.
+Do not add that block to new configs. Built-in file tools and `exec` should use the sandboxed workspace under `tools.workspace`, which defaults to `tools.workspace.templateName: "workspace-sandbox-template"`. Change that value only if your deployed workspace sandbox template has a different name.
 
 ### Providers
 
@@ -1344,10 +1344,10 @@ You should see `network-sandbox-template` and `workspace-sandbox-template` in th
 
 ### Configure nanobot
 
-Add the sandbox template names to your active config file, usually `~/.nanobot/config.json`:
+New configs default to the sandbox template names below. Add or edit these fields in your active config file, usually `~/.nanobot/config.json`, only when you need to override the template name, namespace, timeout, or gateway settings:
 
 > [!IMPORTANT]
-> The `templateName` values are required for the agent's default sandbox-backed capabilities. If your config contains `"templateName": ""`, replace the empty string with the matching template name shown below. A blank `templateName` means nanobot cannot create the sandbox for that tool, so `web_fetch`, `exec`, and workspace-backed file tools will be unavailable.
+> The `templateName` values are required for the agent's default sandbox-backed capabilities, but nanobot now provides defaults that match the manifests in this repository. You can change them if your deployed `SandboxTemplate` objects use different names. If your config contains `"templateName": ""`, replace the empty string with the matching template name shown below. A blank `templateName` means nanobot cannot create the sandbox for that tool, so `web_fetch`, `exec`, and workspace-backed file tools will be unavailable.
 
 ```json
 {
@@ -1374,12 +1374,12 @@ Add the sandbox template names to your active config file, usually `~/.nanobot/c
 
 These values match the manifests shipped in this repository and should work out of the box after `scripts/isolation_dependencies_install.sh` completes successfully.
 
-| Config field | Default value to use | Description |
+| Config field | Built-in default | Description |
 |--------------|----------------------|-------------|
-| `tools.web.sandbox.templateName` | `"network-sandbox-template"` | Required template for `web_fetch`; do not leave blank |
+| `tools.web.sandbox.templateName` | `"network-sandbox-template"` | Template for `web_fetch`; change if your network template uses another name; do not leave blank |
 | `tools.web.sandbox.namespace` | `"default"` | Namespace containing the network sandbox template |
 | `tools.web.sandbox.runTimeout` | `60` | Timeout for the sandbox fetch runner |
-| `tools.workspace.templateName` | `"workspace-sandbox-template"` | Required template for file tools and `exec`; do not leave blank |
+| `tools.workspace.templateName` | `"workspace-sandbox-template"` | Template for file tools and `exec`; change if your workspace template uses another name; do not leave blank |
 | `tools.workspace.namespace` | `"default"` | Namespace containing the workspace sandbox template |
 | `tools.workspace.gatewayName` | `null` | Leave unset for local tunnel mode |
 | `tools.workspace.gatewayNamespace` | `"default"` | Gateway namespace if gateway mode is used |
@@ -1397,7 +1397,7 @@ If `web_fetch` returns:
 {"error": "Sandbox web_fetch is required but not configured. Set tools.web.sandbox.templateName in config.json."}
 ```
 
-then the config file loaded by the current `nanobot` process does not contain `tools.web.sandbox.templateName`, or the gateway was not restarted after editing it.
+then the config file loaded by the current `nanobot` process likely has `tools.web.sandbox.templateName` set to an empty string, was created before the default was added, or the gateway was not restarted after editing it. Set it to `"network-sandbox-template"` or to the name of your custom network sandbox template.
 
 If you see:
 
@@ -1421,7 +1421,7 @@ The current branch pins `k8s-agent-sandbox==0.2.1`.
 Run multiple nanobot gateways or CLI agents from the same installation by giving each one its own config file. In the hardened runtime, there are two layers to think about:
 
 > [!IMPORTANT]
-> `agents.defaults.workspace` (for example `"workspace": "~/.nanobot/workspace"`) and `--workspace` are deprecated host-workspace controls. Do not use them for new configs. The only workspace to configure for agent file and shell capabilities is the sandboxed workspace under `tools.workspace`; use `"workspace-sandbox-template"` for the default hardened setup.
+> `agents.defaults.workspace` (for example `"workspace": "~/.nanobot/workspace"`) and `--workspace` are deprecated host-workspace controls. Do not use them for new configs. The only workspace to configure for agent file and shell capabilities is the sandboxed workspace under `tools.workspace`; it defaults to `"workspace-sandbox-template"` for the default hardened setup, and you can change it if your `SandboxTemplate` has a different name.
 
 | Layer | Controlled by | What it isolates |
 |-------|---------------|------------------|

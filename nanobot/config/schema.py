@@ -109,7 +109,7 @@ class WebSearchConfig(Base):
 class WebSandboxConfig(Base):
     """Agent Sandbox configuration for sandboxed web tools."""
 
-    template_name: str = ""
+    template_name: str = "network-sandbox-template"
     namespace: str = "default"
     run_timeout: int = 60
 
@@ -117,7 +117,7 @@ class WebSandboxConfig(Base):
 class WorkspaceSandboxConfig(Base):
     """Agent Sandbox configuration for workspace-backed filesystem tools."""
 
-    template_name: str = ""
+    template_name: str = "workspace-sandbox-template"
     namespace: str = "default"
     gateway_name: str | None = None
     gateway_namespace: str = "default"
