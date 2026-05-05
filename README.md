@@ -158,14 +158,14 @@ pip install nanobot-ai
 
 ### Install isolation dependencies
 
-nanobot can run outbound page fetching, shell execution, and workspace file operations inside isolated Kubernetes sandboxes. This is required for hardened `web_fetch`, `exec`, and file tools.
+The isolation stack is mandatory for the supported default nanobot setup. nanobot uses it to run outbound page fetching, shell execution, and workspace file operations inside isolated Kubernetes sandboxes. Without it, the agent will not have the default `web_fetch`, `exec`, or workspace-backed file tool capabilities.
 
 Use a source checkout of this repository for the hardened isolation flow. The helper script and manifests live under `scripts/` and `sandbox/`.
 
 > [!IMPORTANT]
 > The isolation setup in this repo is closer to a proof of concept than a polished production installer. Expect rough edges, environment-specific failures, missing cleanup paths, version mismatches, and operational issues. Treat it as an experimental hardening direction that you should inspect, test, and adapt before relying on it.
 
-For a fresh Linux server, install the isolation stack from the repository root:
+For a fresh Linux server, install the isolation dependencies by running the repository helper script from the repository root:
 
 ```bash
 sudo bash scripts/isolation_dependencies_install.sh
@@ -215,7 +215,7 @@ nanobot channels login
 >
 > For other LLM providers, please see the [Providers](#providers) section.
 >
-> For web search and page fetching setup, please see [Web Search](#web-search) and [Isolation Sandbox](#-isolation-sandbox).
+> The isolation dependencies are mandatory for the supported default setup and must be installed with `sudo bash scripts/isolation_dependencies_install.sh`. See [Isolation Sandbox](#-isolation-sandbox) for details.
 
 **1. Initialize**
 
@@ -227,7 +227,13 @@ Use `nanobot onboard --wizard` if you want the interactive setup wizard.
 
 **2. Configure** (`~/.nanobot/config.json`)
 
-Configure your provider and model first. If you want the agent to have the default sandbox-backed tool capabilities (`web_fetch`, `exec`, and workspace-backed file tools), install the isolation stack. New configs default to the template names shipped in this repository.
+Configure your provider and model first. Then install the mandatory isolation dependencies by running the repository helper script:
+
+```bash
+sudo bash scripts/isolation_dependencies_install.sh
+```
+
+New configs default to the template names shipped in this repository.
 
 > [!IMPORTANT]
 > The built-in defaults are `"network-sandbox-template"` for `tools.web.sandbox.templateName` and `"workspace-sandbox-template"` for `tools.workspace.templateName`. You can change these values if your deployed `SandboxTemplate` objects use different names or namespaces. If an older config shows `"templateName": ""`, replace the empty string because blank values disable that sandbox-backed capability.
@@ -283,7 +289,7 @@ Configure your provider and model first. If you want the agent to have the defau
 ```
 
 > [!TIP]
-> If you only want basic LLM chat, the isolation stack is optional. If you want `web_fetch`, `exec`, or file tools to work in the hardened runtime, install the isolation dependencies and keep the default `templateName` values above, or change them to match your own sandbox templates. Empty strings such as `"templateName": ""` mean the agent will not have those default tool capabilities.
+> The isolation stack is mandatory for the supported default setup. Install the isolation dependencies and keep the default `templateName` values above, or change them to match your own sandbox templates. Empty strings such as `"templateName": ""` mean the agent will not have the default hardened capabilities.
 
 **3. Chat**
 
@@ -291,7 +297,7 @@ Configure your provider and model first. If you want the agent to have the defau
 nanobot agent
 ```
 
-That's it for basic chat. Add the isolation stack when you want page fetching, shell commands, or workspace-backed file tools.
+After installing the isolation stack and setting your provider credentials, the default hardened agent is ready to use.
 
 ## 💬 Chat Apps
 
@@ -1630,7 +1636,7 @@ The agent can also manage this file itself — ask it to "add a periodic task" a
 > [!TIP]
 > The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your default config and runtime files persist across container restarts.
 >
-> The Docker examples are for basic chat and channel operation. Sandboxed `web_fetch`, file tools, and `exec` require the isolation stack plus Kubernetes/router access from inside the container. For the least surprising hardened setup, run nanobot directly in a host venv on the machine where `scripts/isolation_dependencies_install.sh` was run.
+> The Docker examples assume the mandatory isolation stack is already installed and reachable. Sandboxed `web_fetch`, file tools, and `exec` require Kubernetes/router access from inside the container. For the least surprising hardened setup, run nanobot directly in a host venv on the machine where `scripts/isolation_dependencies_install.sh` was run.
 
 ### Docker Compose
 
