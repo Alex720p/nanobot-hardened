@@ -182,7 +182,7 @@ The script expects:
 - `/dev/kvm` available for Kata-backed isolation
 - A host where it is acceptable to install or reset local Kubernetes components
 
-After the script finishes, configure the sandbox template names in `~/.nanobot/config.json` as shown in [Isolation Sandbox](#-isolation-sandbox).
+After the script finishes, configure the sandbox template names in `~/.nanobot/config.json` as shown in [Isolation Sandbox](#-isolation-sandbox). You can also leave the default values if you choose.
 
 ### Update to latest version
 
