@@ -7,13 +7,6 @@ spec:
   podTemplate:
     spec:
       runtimeClassName: kata-qemu
-      dnsPolicy: None
-      dnsConfig:
-        nameservers:
-        - 1.1.1.1
-        - 8.8.8.8
-        searches:
-        - .
       containers:
       - name: python-runtime
         image: alex720p/python-network-sandbox:latest
@@ -38,43 +31,3 @@ spec:
             memory: "512Mi"
             ephemeral-storage: "512Mi"
       restartPolicy: OnFailure
-
-  networkPolicy:
-    ingress:
-    - from:
-      - podSelector:
-          matchLabels:
-            app: sandbox-router
-
-    egress:
-    - to:
-      - ipBlock:
-          cidr: 1.1.1.1/32
-      ports:
-      - protocol: UDP
-        port: 53
-      - protocol: TCP
-        port: 53
-
-    - to:
-      - ipBlock:
-          cidr: 8.8.8.8/32
-      ports:
-      - protocol: UDP
-        port: 53
-      - protocol: TCP
-        port: 53
-
-    - to:
-      - ipBlock:
-          cidr: 0.0.0.0/0
-          except:
-          - 10.0.0.0/8
-          - 172.16.0.0/12
-          - 192.168.0.0/16
-          - 169.254.0.0/16
-      ports:
-      - protocol: TCP
-        port: 80
-      - protocol: TCP
-        port: 443
