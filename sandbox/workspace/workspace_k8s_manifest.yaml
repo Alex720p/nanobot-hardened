@@ -4,13 +4,23 @@ metadata:
   name: workspace-sandbox-template
   namespace: default
 spec:
+  networkPolicy:
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: sandbox-router
+      ports:
+      - protocol: TCP
+        port: 8888
+    egress: []
   podTemplate:
     spec:
       runtimeClassName: kata-qemu     
       containers:
       - name: agent-debian-workspace
         image: alex720p/debian-workspace-sandbox:latest
-        imagePullPolicy: 
+        imagePullPolicy: Always
         ports:
         - containerPort: 8888
         readinessProbe:
